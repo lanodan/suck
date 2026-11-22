@@ -1,0 +1,20 @@
+This directory contains README and man pages translated into Japanese.
+If you do not need Japanese documentation, you do not have to "make"
+this.
+
+Messages below are written in Japanese.
+
+このディレクトリは、suck-3.3.2 パッケージの README (の一部) とマニュア
+ルを日本語に翻訳したファイルが収めてあります。さらにこれらのドキュメン
+トをインストールするための Makefile も添付してあります。インストールに
+あたっては、Makefile の先頭のパスを適切に変更してください。
+
+なおこのディレクトリで使用しているコード体系は EUC ですので、他のコー
+ド体系をデフォルトとするシステムでは、 nkf 等でコードを適切に変換して
+ください。
+
+この翻訳に関する著作権は久保元治 (mkubo@st.rim.or.jp) が有しています。
+著作権は放棄しませんが、商用目的を除いて自由に配布していただいてかまい
+ません。なお、誤りやアドバイスがあれば、メールでお知らせください。
+
+mkubo@st.rim.or.jp

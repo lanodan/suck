@@ -1,0 +1,113 @@
+
+PREFACE
+=======
+Original Author - Tim Smith (tzs@coho.halcyon.com)
+Maintainers - 
+March 1995 - Sven Goldt (goldt@math.tu-berlin.de)
+July 1995  - Robert A. Yetman (boby@pixi.com)
+
+Current Maintainer - boby@pixi.com
+Japanese Docs - Motoharu Kubo (mkubo@st.rim.or.jp)
+Italian Docs - Giuseppe De Marco (gdm@rebel.net)
+
+INTRODUCTION
+============
+The primary use for suck is to feed a local INN or CNEWS server, without
+the remote NNTP feeding you articles.
+
+This package contains the following software for copying news from an
+NNTP server to your local machine, and copying replies back up to
+an NNTP server.
+
+The suck/rpost combination allows you to run your own INN/CNEWS site, 
+controlling where you get your news, and where you post outgoing articles.
+Suck/rpost use only standard NNTP commands that are used by your favorite
+news reader (tin, xvnews, strn) such as POST and ARTICLE.  If you can use tin
+or xvnews against a NNTP site, than you can use Suck/Rpost.  
+
+suck			Pull a small newsfeed from an NNTP server
+
+lpost			Gives one article fetched by suck to the local server.
+
+rpost			Posts article(s) to an NNTP server (like inews)
+			using the POST command
+
+testhost        	Check to see what commands your host recognizes or
+			get the active or new list.
+
+************************************************************************
+NOTE:
+Suck will not work with obsolete NNTP servers that can't handle the xhdr
+command. inn-1.4sec has its own NNTP server that can handle xhdr, cnews.CR-G
+has no own NNTP server so it depends on which NNTP server you connect to cnews.
+
+NOTE2:
+This code assumes an ANSI-compliant compiler, it will NOT work with old
+compilers (Such as Sun's) which don't accept function prototypes.  You could
+try using the unprotoize program included in gcc, but then if you are going
+to get that, why not just build gcc? :)
+
+NOTE3:
+The Makefile assumes you are using GNU make, other makes may or may not work.
+
+LOCATION
+========
+Site1	     = sunsite.unc.edu
+Path1        = /pub/Linux/system/Mail/news
+File1        = suck-3.3.2.tar.gz
+
+Site2        = tsx-11.mit.edu
+Path2        = /pub/linux/sources/sbin
+File2        = suck-3.3.2.tar.gz
+
+THANKS to all the users who have sent me mail, both good and bad.
+
+A DOUBLE THANKS to the v3.0 beta-testers:
+- harleys@io.org
+- jh@yahoo.com
+- maho@Uni-paderborn.de
+- paonia@home.welcomehome.org
+- stuart@mannet.mcb.net
+- tom@mtanet.com
+
+They helped me work out quite a few bugs with portability problems.
+
+************************************************************************  
+If you don't see a feature that you asked for, it is because I have
+rejected it for various reasons, usually because I can't find a 
+graceful way to implement it in the code, or I don't think that it
+is something that is needed by most of the users.
+
+---------------------------HOW-TO-USE-------------------------------------
+1.  run ./configure
+2.  If your history file is not a flat file, edit the top of the Makefile.
+3.  Edit suck_config.h - lots of configurable stuff here
+4.  Make it.  (make CFLAGS=-O2, make install)
+5.  Create a sucknewsrc - which groups to download (see suck man pg)
+6.  Take a look at sample/get.news(.innxmit or .rnews)
+	These scripts show the whole scheme, from sucking news to
+	posting replies to your remote host.  Use .innxmit if you
+	are using INND, or .rnews if you are using CNEWS.
+	The get.news.innxmit is the script I actually use, since I
+	am running INND.
+7.  READ THE MAN PAGES
+**************************************************************************
+MAJOR CHANGES FROM 3.3.1 -> 3.3.2
+
+* Bug fix for regex scan stuff that made it only search for the first
+	pattern on each killfile line instead of all patterns.
+
+* Added error message print if suck.restart exists, but suck.sorted doesn't.
+
+
+**************************************************************************
+IDEAS FOR FUTURE REVISIONS
+
+1. Store messages in news/group/nr style format
+
+2. Internationalize, allow the screen messages to be in a different language.
+
+3. Add to killfile a mechanism to change the *_SEPARATORS from within a
+killfile.
+
+boby@pixi.com
