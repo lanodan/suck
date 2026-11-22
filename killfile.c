@@ -39,7 +39,6 @@
 
 #define GROUP_KEEP "keep"
 #define GROUP_DELETE "delete"		/* word in param file parsed for on group line to signify keep or delete */
-#define COMMA ','			/* group separator in newsgroup line in article */
 #define NEWSGROUP_HEADER "Newsgroups: "	/* header for line to match group files to */
 
 /* local function prototypes */
@@ -67,7 +66,7 @@ int find_string(int, pmy_regex, char *);
 /*-------------------------------------------------------------------------*/
 /* the enum must match the phrases in suckengl.c  killf_reasons[] */
 enum { REASON_NONE, REASON_TOOMANYLINES, REASON_NOTENUFLINES, REASON_NRGRPS, REASON_NOKEEP, REASON_TIE, REASON_HEADER,  \
-       REASON_BODY, REASON_BODYBIG, REASON_BODYSMALL };
+       REASON_BODY, REASON_BODYBIG, REASON_BODYSMALL, REASON_NRXREF };
 enum { CHECK_EXACT, CHECK_CHECK };
 enum { CHUNK_HEADER, CHUNK_BODY };
 
@@ -92,20 +91,23 @@ const struct {
 	{18, "USE_EXTENDED_REGEX", 0, ""}, /* do we use extended regular expressions */
 	{10, "NON_REGEX=", 0, ""},
 	{5,  "PERL=", 0, ""},
+	{14, "XOVER_LOG_LONG", 0, ""}, /* make Xover killlog look like regular kill lo)*/
+	{7,  "NRXREF=", 6, "Xref: "}, 
 };
 
 
 enum { PARAM_HILINE, PARAM_LOWLINE, PARAM_NRGRPS, PARAM_GROUP, PARAM_QUOTE, PARAM_PROGRAM,PARAM_HDRSCAN,
 	PARAM_BODY, PARAM_BODYBIG, PARAM_BODYSMALL, PARAM_GRPOVERRIDE, PARAM_TIEDELETE, PARAM_E_REGEX,
-	PARAM_NONREGEX, PARAM_PERL};
+	PARAM_NONREGEX, PARAM_PERL, PARAM_XOVER_LOG_LONG, PARAM_NRXREF};
 #define NR_PARAMS ((int) (sizeof(Params)/sizeof(Params[0])))
 
 
 /*--------------------------------------------------------------------------*/
-PKillStruct parse_killfile(const char *filename, int logfile_yn, int debug, int ignore_postfix) {
+PKillStruct parse_killfile(int which, int logfile_yn, int debug, int ignore_postfix) {
 	FILE *fptr;
 	char buf[MAXLINLEN+1];
 	int i, doprg = FALSE, mastergrp = RETVAL_OK, retval = TRUE;
+	const char *filename;
 #ifdef PERL_EMBED
 	int doperl = FALSE;
 #endif
@@ -134,8 +136,10 @@ PKillStruct parse_killfile(const char *filename, int logfile_yn, int debug, int 
 		Masterkill->pbody= NULL;
 		Masterkill->bodylen = 0;
 		Masterkill->use_extended_regex = FALSE;
-		Masterkill->xoverview = NULL; /* these last two are used in xoverview code */
-		
+		Masterkill->xover_log_long = FALSE;
+/* initialize the master struct */
+		Masterkill->child.Stdin = Masterkill->child.Stdout = -1;
+		Masterkill->child.Pid = -1;		
 		initialize_one_kill(&(Masterkill->master));
 
 #ifdef PERL_EMBED
@@ -145,6 +149,8 @@ PKillStruct parse_killfile(const char *filename, int logfile_yn, int debug, int 
 		Masterkill->logyn = logfile_yn;
 		/* which option to we use in call to full_path() ?  Do we use the postfix or not? */
 		Masterkill->ignore_postfix = ( ignore_postfix == TRUE) ? FP_GET_NOPOSTFIX : FP_GET ;
+
+		filename = ( which == KILL_XOVER ) ? N_XOVER : N_KILLFILE;
 
 		if(debug == TRUE) {
 			do_debug("Trying to read killfile: %s\n", full_path(Masterkill->ignore_postfix, FP_DATADIR, filename));
@@ -175,7 +181,7 @@ PKillStruct parse_killfile(const char *filename, int logfile_yn, int debug, int 
 #ifdef PERL_EMBED
 					if(Masterkill->perl_int == NULL) {
 #endif
-						doprg = killprg_forkit(Masterkill, &buf[Params[PARAM_PROGRAM].len], debug);
+						doprg = killprg_forkit(Masterkill, &buf[Params[PARAM_PROGRAM].len], debug, which);
 #ifdef PERL_EMBED
 					}
 #endif
@@ -189,10 +195,14 @@ PKillStruct parse_killfile(const char *filename, int logfile_yn, int debug, int 
 				if(strncmp(buf, Params[PARAM_E_REGEX].name, (size_t) Params[PARAM_E_REGEX].len) == 0) {
 					Masterkill->use_extended_regex = TRUE;
 				}
+				if(strncmp(buf, Params[PARAM_XOVER_LOG_LONG].name, (size_t) Params[PARAM_XOVER_LOG_LONG].len) == 0) {
+					Masterkill->xover_log_long = TRUE;
+				}
+	   
 #ifdef PERL_EMBED				
 				if(strncmp(buf, Params[PARAM_PERL].name, (size_t) Params[PARAM_PERL].len) == 0) {
 					if(doprg == FALSE) {
-						doperl = killperl_setup(Masterkill, &buf[Params[PARAM_PERL].len], debug);
+						doperl = killperl_setup(Masterkill, &buf[Params[PARAM_PERL].len], debug, which);
 					}
 				}
 #endif	
@@ -289,14 +299,14 @@ int pass_two(PKillStruct killp, int debug, const char *filename ) {
 						else {
 							*grpfile = '\0';	/* truncate the group name for easier copying later */
 							++grpfile;
-						}
-						/* nuke newline */
-						i = strlen(grpfile) - 1;
-						if(grpfile[i] == '\n') {
-							grpfile[i] = '\0';
+						
+							/* nuke newline */
+							i = strlen(grpfile) - 1;
+							if(grpfile[i] == '\n') {
+								grpfile[i] = '\0';
+							}
 						}
 					}
-
 				}
 				if(retval == RETVAL_ERROR) {
 					error_log(ERRLOG_REPORT, killf_phrases[2], buf, NULL);
@@ -331,15 +341,14 @@ int pass_two(PKillStruct killp, int debug, const char *filename ) {
 void free_killfile(PKillStruct master) {
 
 	int i;
-	POverview tmp, tmp2;
-	
+		
 	if(master != NULL) {
 		/* first kill off killprg if its there */
-		if(master->killfunc==chk_msg_kill_fork) {
+		if(master->killfunc==chk_msg_kill_fork || master->child.Pid != -1) {
 			killprg_closeit(master);
 		}
 #ifdef PERL_EMBED
-		if(master->perl_int == NULL) {
+		if(master->perl_int != NULL) {
 			killperl_done(master);
 		}
 #endif
@@ -355,15 +364,7 @@ void free_killfile(PKillStruct master) {
 			}
 			free(master->grps);
 		}
-		tmp = master->xoverview;
-		while (tmp != NULL) {
-			tmp2 = tmp->next;
-			if(tmp->header != NULL) {
-				free(tmp->header);
-			}
-			free(tmp);
-			tmp = tmp2;
-		}
+
 		free(master);
 	}
 }
@@ -406,7 +407,7 @@ void free_node(OneKill node) {
 	
 }
 /*--------------------------------------------------------------------------*/
-int get_one_article_kill(PMaster master, int logcount) {
+int get_one_article_kill(PMaster master, int logcount, long itemon) {
 
 	char buf[MAXLINLEN+1], *inbuf;
 	const char *tname;
@@ -425,13 +426,13 @@ int get_one_article_kill(PMaster master, int logcount) {
 	
 	retval =get_chunk_mem(master, &len, CHUNK_HEADER, &inbuf);
 	
-	/* the killfunc pointer points to either chk_msg_kill() or chk_msg_kill_fork() */
+	/* the killfunc pointer points to either chk_msg_kill(), chk_msg_kill_fork(), or chk_msg_kill_perl() */
 	/* do we have to download this sucker, is it mandatory? */
 	if(retval == RETVAL_OK && ((master->curr)->mandatory == MANDATORY_YES || (*killp->killfunc)(master, killp, inbuf, len) == FALSE)) {
 		if(master->MultiFile == TRUE) {
 				/* open file */
 				/* file name will be ####-#### ex 001-166 (nron,total) */
-			sprintf(buf,"%0*d-%d", logcount, master->itemon, master->nritems);
+			sprintf(buf,"%0*ld-%d", logcount, itemon, master->nritems);
 
 				/* the strcpy to avoid wiping out fname in second call to full_path */
 			strcpy(fname, full_path(FP_GET, FP_MSGDIR, buf));
@@ -452,7 +453,7 @@ int get_one_article_kill(PMaster master, int logcount) {
 					retval = RETVAL_ERROR;
 					error_log(ERRLOG_REPORT, killf_phrases[9], NULL);
 				}
-				if(retval == RETVAL_OK) {
+				if(retval == RETVAL_OK && master->header_only == FALSE) {
 					/* have we already downloaded the body? */
 					if(killp->pbody != NULL) {
 						inbuf = killp->pbody;
@@ -765,7 +766,7 @@ int check_a_group(PMaster master, POneKill killp, char *headerbuf, char **why) {
 			tptr = startline;
 			while(i <= killp->maxgrps && *tptr != '\n' && *tptr != '\0' ) {
 				/* some news server use space vice comma for separator */
-				if(*tptr == COMMA || *tptr == ' ') {
+				if(*tptr == COMMA || *tptr == SPACE ) {
 					i++;
 				}
 				tptr++;
@@ -773,6 +774,24 @@ int check_a_group(PMaster master, POneKill killp, char *headerbuf, char **why) {
 			if(i > killp->maxgrps) {
 				match = TRUE;
 				*why = killf_reasons[REASON_NRGRPS];
+			}		
+		}
+	}
+	/* now check nrxref */
+	if(match == FALSE && killp->maxxref > 0) {
+		if((startline = strstr(headerbuf, Params[PARAM_NRXREF].header)) != NULL) {
+			/* count the nr of colons in  line, they separate the group/article nr */
+			i = 0;
+			tptr = startline;
+			while(i <= killp->maxxref && *tptr != '\n' && *tptr != '\0' ) {
+				if(*tptr == COLON) {
+					i++;
+				}
+				tptr++;
+			}
+			if(i > killp->maxxref) {
+				match = TRUE;
+				*why = killf_reasons[REASON_NRXREF];
 			}		
 		}
 	}
@@ -876,7 +895,7 @@ void initialize_one_kill(POneKill mykill) {
 	mykill->list = NULL;
 	mykill->header = NULL;
 	mykill->body = NULL;
-	mykill->hilines = mykill->lowlines = mykill->maxgrps = 0;
+	mykill->hilines = mykill->lowlines = mykill->maxgrps = mykill->maxxref = 0;
 	mykill->bodybig = mykill->bodysmall = 0;
 	mykill->quote = KILLFILE_QUOTE;
 	mykill->non_regex = KILLFILE_NONREGEX;
@@ -935,6 +954,9 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill, int debu
 							break;
 						case PARAM_NRGRPS:
 							(void) sscanf(&buf[Params[PARAM_NRGRPS].len], "%d", &(mykill->maxgrps));
+							break;
+						case PARAM_NRXREF:
+							(void) sscanf(&buf[Params[PARAM_NRXREF].len], "%d", &(mykill->maxxref));
 							break;
 						case PARAM_QUOTE:
 							if(buf[Params[PARAM_QUOTE].len] == '\0') {
@@ -1001,7 +1023,7 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill, int debu
 		}
 		(void) fclose(fptr);
 		/* check for an empty killfile */
-		if(mykill->hilines == 0 && mykill->lowlines == 0 && mykill->maxgrps == 0 && mykill->bodybig == 0 && mykill->bodysmall == 0 && mykill->header == NULL && mykill->list == NULL && mykill->body == NULL) {
+		if(mykill->hilines == 0 && mykill->lowlines == 0 && mykill->maxgrps == 0 && mykill->bodybig == 0 && mykill->bodysmall == 0 && mykill->header == NULL && mykill->list == NULL && mykill->body == NULL && mykill->maxxref == 0) {
 			retval = RETVAL_EMPTYKILL;
 		}
 	}
@@ -1325,6 +1347,7 @@ void print_debug(PKillStruct master, const char *fname) {
 	do_debug("totgrps=%d\n", master->totgrps);
 	do_debug("ignore_postfix=%s\n",true_str(master->ignore_postfix));
 	do_debug("use_extended_regex=%s\n", true_str(master->use_extended_regex));
+	do_debug("xover_long_long=%s\n", true_str(master->xover_log_long));
 	
 	do_debug("Master kill group");
 	debug_one_kill(&(master->master));
@@ -1344,6 +1367,7 @@ void debug_one_kill(POneKill ptr) {
 	do_debug("--hilines =%d\n", ptr->hilines);
 	do_debug("--lowlines=%d\n", ptr->lowlines);
 	do_debug("--maxgrps=%d\n", ptr->maxgrps);
+	do_debug("--maxxref=%d\n", ptr->maxxref);
 	do_debug("--bodysize>%lu\n", ptr->bodybig);
 	do_debug("--bodysize<%lu\n", ptr->bodysmall);
 	do_debug("--quote=%c\n", ptr->quote);

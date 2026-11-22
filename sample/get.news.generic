@@ -27,7 +27,6 @@ TESTHOST=testhost
 RPOST=rpost
 SUCK=suck
 TESTHOST=testhost
-RNEWS=${NEWSDIR}/rnews			# location of rnews
 
 # if we are already running, abort
 

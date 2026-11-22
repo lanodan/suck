@@ -8,7 +8,6 @@ README.Xover			# about the new xover killfiles
 # SCRIPTS TO TIE ALL THIS STUFF TOGETHER
 sample/get.news.innxmit		# sample for INN (innxmit)
 sample/get.news.rnews		# sample for CNEWS (rnews)
-
 sample/put.news			# used by the get.news scripts
 
 # SAMPLE DATAFILES
@@ -18,6 +17,7 @@ sample/suckothermsgs.sample
 sample/killprg_child.c		# sample of killprg routine
 sample/kill_perl.pl		# sample of perl embed for killfiles
 sample/put.news.pl		# sample of perl embed for rpost
+sample/post_filter.pl		# sample of pre-post filter
 
 # MAN PAGES
 man/suck.1
@@ -26,10 +26,13 @@ man/rpost.1
 man/testhost.1
 
 # JAVA RELATED FILES
-java/Suck.java
+java/Suck.java			# a Java gui for downloading news
 java/Suck.class
 java/SuckMenu.class
 java/SuckUpdate.class
+
+# PERL RELATED FILES
+perl/header.pl			# a Perl/Tk gui to display articles/header
 
 # SOURCE FILES	
 active.c
@@ -42,6 +45,8 @@ both_phrases.c
 chkhistory.c
 chkhistory.h
 chkhistory_db.c
+db.c
+db.h
 dedupe.c
 dedupe.h
 killfile.c
@@ -51,8 +56,11 @@ lmove.c
 lmove_phrases.c
 lpost.c
 phrases.h
+read_db.c
 rpost.c
 rpost_phrases.c
+ssort.c
+ssort.h
 suck.c
 suck.h
 suck_config.h
@@ -73,3 +81,4 @@ configure
 configure.in
 install-sh
 stamp-h
+suck.spec

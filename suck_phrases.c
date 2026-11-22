@@ -11,7 +11,8 @@ const char *default_chkh_phrases[] = {
 	"Bogus line, ignoring: %v1%",
 	"Processed history, %v1% dupes removed\n",
 	"Out of Memory, skipping history check",
-	"Processing History Database"			/* 5 */
+	"Processing History Database ",			/* 5 */
+	"Unknown error reading history file %v1%\n",
 };
 
 const char *default_dedupe_phrases[] = {
@@ -31,6 +32,7 @@ const char *default_killf_reasons[] = {
 	"Body match:",
 	"Body Size exceeded, size=",
 	"Body Size too small, size="
+	"Too many Groups in Xref",             /* 10 */    
 };
 
 const char *default_killf_phrases[] = {
@@ -88,7 +90,7 @@ const char *default_sucku_phrases[] = {
 const char *default_suck_phrases[] = {
 	"suck: status log",		/* 0 */
 	"Attempting to connect to %v1%\n",
-	"Initiating restart at article %v1% of %v2%\n",
+	"Initiating restart\n",
 	"No articles\n",
 	"Closed connection to %v1%\n",
 	"BPS",	/* 5*/
@@ -109,7 +111,7 @@ const char *default_suck_phrases[] = {
 	"Total articles to download: %v1%\n",		/* 20 */
 	"Invalid Article Nr, skipping: %v1%\n",
 	"Out of Memory, aborting\n",
-	"Whoops, %v1% exists, %v2% doesn't, unable to restart.\n",
+	"Unable to write db record to disk, aborting\n",
 	"Signal received, will finish downloading article.\n",
 	"Notify programmer, problem with pause_signal()\n",	/* 25 */
 	"\nGot Pause Signal, swapping pause values\n",	
@@ -118,8 +120,8 @@ const char *default_suck_phrases[] = {
 	"***Unexpected response to command, %v1%\n%v2%\n", 
 	"Moving newsrc to backup",				/* 30 */
 	"Moving newrc to newsrc",
-	"Removing Sorted File",
-	"Removing Supplemental Article file",
+	"Removing Suck DB File",
+	"Removing supplemental article file",
 	"Invalid argument: %v1%\n",
 	"No rnews batch file size provided\n",			/* 35 */
 	"No postfix provided\n",
@@ -147,7 +149,12 @@ const char *default_suck_phrases[] = {
 	"Can't pre-batch files, no batch mode specified\n",
 	"Broken connection, aborting\n",
 	"Restart: Skipping first article\n", /*60*/
-	"No kill log file name provied\n",
+	"No kill log file name provided\n",
+	"No post filter provided\n",
+	"----Message-ID too long----\nincrease MAX_MSGID_LEN in suck_config.h, recompile, and re-run.\n",
+	"No history file path provided\n",
+	"No default read for new active groups provided\n", /* 65 */
+	"Invalid default read for new active group, must be <= 0\n", 
 };
 
 const char *default_batch_phrases[] = {
@@ -206,6 +213,10 @@ const char *default_xover_reasons[] = {
 	"Xover - Too few lines",
 	"Xover - Match on Header",
 	"Xover - No Match on Group Keep file", /* 5 */
+	"Xover - Multiple Matches/Tiebreaker used",
+	"Xover - Too many Groups in Xref",
+	"Xover - Match by external program",
+	"Xover - Match by perl program"
 };
 
 int nr_suck_phrases= sizeof(default_suck_phrases)/sizeof(default_suck_phrases[0]);

@@ -1,9 +1,13 @@
 #ifndef _SUCK_CONFIG_H
 #define _SUCK_CONFIG_H 1
 
-/* Config Options */
 #define DEFAULT_NNRP_PORT 119 	/* port to talk to on remote machine */
 #define LOCAL_PORT 119		/* port to talk to on local host */
+
+/* Max length of a Message-ID that is possbile */
+#define MAX_MSGID_LEN 196
+/* Max length of a Group Name */
+#define MAX_GRP_LEN 128
 
 /* If you don't EVER plan to use the KILLFILE stuff, comment this out for a slight speed increase */
 /* If you want to, or plan to, use the KILLFILE stuff, uncomment this */
@@ -54,8 +58,6 @@
 /* that you already have, uncomment this.			    */
 /* If you use DBM, DBZ, or NDBM then you need to edit the Makefile  */
 /* to show which DB scheme you use. 				    */
-/* If you have a flat file, you need to edit the Makefile so suck   */
-/* knows where to find the history file 			    */
 #define CHECK_HISTORY 1
 
 /* If your system doesn't like the lock file stuff in suck.c or lmove.c */
@@ -90,13 +92,13 @@
 #define N_XOVER         "suckxover"             /* parameter file for which articles NOT to download via xover */
 
 #define N_PHRASES "/usr/local/lib/suck.phrases"	/* default location for phrase file */
+#define HISTORY_FILE "/usr/news/db/history"     /* default location for history file */
 
 /* TEMP FILES created */
 #define N_NEWRC "suck.newrc"
-#define N_SORTED "suck.sorted"
-#define N_RESTART "suck.restart"
 #define N_KILLLOG "suck.killlog"
 #define N_LOCKFILE "suck.lock"
+#define N_DBFILE "suck.db"
 #define N_TMP_EXTENSION ".tmp"		/* added to file in process of being downloaded */
 #define N_LMOVE_LOCKFILE "lmove.lock"
 #define N_POSTFILE "suck.post"
@@ -166,6 +168,10 @@
 
 /* stuff needed for Perl rpost interpreter */
 #define PERL_RPOST_SUB "Embed::Persistant::perl_rpost"
+
+/* stuff needed for PERL xover interpreter */
+#define PERL_OVER_SUB "Embed::Persistant::perl_overview"  /* subroutine which gets the overview.fmt list */
+#define PERL_XOVER_SUB "Embed::Persistant::perl_xover"    /* subroutine which gets each xoverview line */
 
 /*------------------------------------------------------------*/
 /* the following should be handled by the auto-config stuff */

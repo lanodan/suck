@@ -21,6 +21,8 @@
 #include <perl.h>
 #ifndef ERRSV
 # define ERRSV (GvSV(errgv))  /* needed for perl 5.004 and earlier */
+#endif
+#ifndef PL_na
 # define PL_na (na)
 #endif
 #endif
@@ -495,7 +497,7 @@ int do_filter(int argc, char *argv[], int debug) {
 	  case 0:	/* in child, do execl */
 		if(execvp(argv[0], argv) == -1) {
 			MyPerror(rpost_phrases[14]);
-			retval = RETVAL_ERROR;
+			exit(-1); /* so we don't get two running */
 		}
 		break;
 	  case -1:	/* should never get here */
@@ -911,7 +913,7 @@ int do_perl(int sockfd, Pargs myargs) {
 	/* this routine is similar to do_batch */
 	int i, x, nrdone, nrok, retval;
 	FILE *fpi_batch, *fpi_msg;
-	char buf[MAXLINLEN+1], file[MAXLINLEN+1];
+	char buf[MAXLINLEN+1], file[MAXLINLEN+1], infilen[MAXLINLEN+1];
 	char *infile, *args[2] = { NULL, NULL};
 	dSP; /* perl stack pointer */
 	SV *fname; /* used to get fname off of perl stack */
@@ -992,6 +994,10 @@ int do_perl(int sockfd, Pargs myargs) {
 				if(myargs->debug == TRUE) {
 					do_debug("got string =%s\n", (infile == NULL) ? "NULL" : infile);
 				}
+				/* have to do the following cause as soon as we do FREETMPS, the */
+				/* data that infile points to will disappear */
+				strcpy(infilen, infile);
+				infile = infilen;
 			}
 			PUTBACK;
 			FREETMPS;

@@ -66,9 +66,13 @@ int get_message_index_active(PMaster master) {
 		/* can we get active list from local file */
 		listhead = read_active(master, ignorehead);
 	}
-
+	/* if it takes a while to read the active the other end */
+	/* might have timed out, hence this option */
+	if(master->conn_active == TRUE) {
+		retval = do_connect(master, CONNECT_AGAIN);
+	}
 	/* now get the MsgIds */
-	if(listhead != NULL) {
+	if(retval == RETVAL_OK && listhead != NULL) {
 		retval = get_msgids(master, listhead);
 		do_free(listhead, ignorehead);
 	}
@@ -82,7 +86,6 @@ int get_message_index_active(PMaster master) {
 	}
 	else {
 		print_phrases(master->msgs, active_phrases[5], str_int(master->nritems), NULL);
-		retval = do_supplemental(master);
 	}
 	
 	return retval;
@@ -409,7 +412,7 @@ int get_msgids(PMaster master, Pactive head) {
 		while( plist != NULL) {
 			if(plist->done == FALSE) {
 				/* create a line for newsrc file */
-				lastread = ACTIVE_DEFAULT_LASTREAD;
+				lastread = master->active_lastread;
 				maxread = 0;
 				
 				sprintf(buf,"%s %ld\n", plist->group, lastread);

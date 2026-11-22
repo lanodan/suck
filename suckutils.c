@@ -26,8 +26,8 @@
 #include <sys/param.h>
 #include <ctype.h>
 
-#include "suck.h"
 #include "suck_config.h"
+#include "suck.h"
 #include "both.h"
 #include "suckutils.h"
 #include "phrases.h"
@@ -211,6 +211,42 @@ int do_lockfile(PMaster master) {
 	return retval;
 }
 #endif
+/*-------------------------------------------------------------------------*/
+int qcmp_msgid(const char *nr1, const char *nr2) {
+	/* return -1 if a < b, 0 if a == b, 1 if a > b */
+	
+	int retval = 0;
+
+        /* cmp two article id numbers */
+	/* which is <xxxxxxxxxxxxxxxxx@place.org */
+	/* use case sensitive compares up to the @ */
+	/* then use case insensitive compares on the organization */
+	/* this is to conform to rfc822 */
+
+	if(nr1 != NULL && nr2 != NULL) {		
+		while ( *nr1 == *nr2 && *nr1 != '\0' && *nr1 != '@') {
+			nr1++;
+			nr2++;			
+		}
+		if(*nr1 == '@') {
+			while( tolower(*nr1) == tolower(*nr2) && *nr1 != '\0') {
+				nr1++;
+				nr2++;
+			}
+		}
+		if(*nr1 == *nr2 && *nr1 == '\0') {
+			retval = 0;
+		}
+		else if(*nr1 != *nr2) {
+			retval = ( *nr1 < *nr2 ) ? -1 : 1;
+		}
+		else {
+			/* one is longer than the other */
+			retval = (*nr1 == '\0') ? -1 : 1;
+		}
+	}	
+	return retval;
+}
 /*------------------------------------------------------------------------------*/
 int cmp_msgid(const char *nr1, const char *nr2) {
 	/* cmp two article id numbers */

@@ -1,6 +1,249 @@
 
 CHANGES
 =======
+-- Changes from Suck-4.2.1 -> Suck-4.2.2
+
+* lmove.c match_group(), move_msgs(), scan_args() - Re-wrote
+	for new options -h and -s to create hard or symbolic
+	links to files crossposted to multiple groups.  Re-wrote
+ 	code to handle malformed header with spaces either before
+	or after the newsgroup names.
+
+	load_active() - added test for duplicate group line.
+
+* suck.c - do_one_group() - changed command from "xhdr 111-"
+	to "xhdr 111-2222" for brain-dead servers that don't
+	follow the proposed standard and treat 111- correctly.
+
+* xover.c - do_xover(), do_group_xover() - changed command from
+	"xover 111-" to "xover 111-222".
+
+25 July 1999 - Suck-4.2.2 released
+
+-- Changes from Suck-4.2.0 -> Suck-4.2.1
+
+* rpost.c - do_perl() - fixed bug where infile was being lost
+	due to FREETMPS, causing failed posting.
+
+* suck.c - restart_yn() - fixed bug where if prior to restart,
+	we had sent command for an article, but not received it,
+	then on restart, we would skip article.   So I have
+	to set sentcmd to false if we haven't downloaded it.
+
+* xover.c - chk_a_group() - rewrote into one loop, to get rid
+	of segfaults on NULL field, and to speed things up for
+	complicated xover files.
+
+23 May 1999 - Suck-4.2.1 released
+
+-- Changes from Suck-4.1.2 -> Suck-4.2.0
+
+* active.c - get_msgids() - added new option, -i, to set the default
+	number of articles to download when using the -A or -AL option
+	and a new group is added.  See man page for usage.
+
+        do_one_group() - changed handling of return from 
+	do_group_xover() so handle new error code.
+
+	parse_args(), main() - added code to handle -i option.
+
+	get_articles() - fixed bug in handling of pause and
+	reconnect after X nr of articles.  Wasn't taken into
+	account 0 articles correctly.
+
+* killfile.c - moved xoverview pointer out of master killfile and
+	into master struct, so can use independently of killfiles
+	(for -Z option).
+
+	parse_killfile() - changed to passed which argument to 
+	various setup routines, so can distinguish between XOVER
+	and regular killfiles.
+
+* killprg.c - killprg_forkit(), killperl_setup() - added test for
+	which, so if XOVER killfiles we don't point the killfile
+	functions to killprg stuff.
+
+	- killprg_sendoverview(), killprg_sendxover, 
+	killperl_sendxover() - created.  These routines handle 
+	the sending of the overview.fmt and each overview line
+	to a child program or perl subroutine for matching.
+
+* suck.c - main() - added code to handle retreival and freeing up
+	of memory used by overview.fmt.  Added call to free up
+	xoverp killfile.u
+
+	- do_one_group() - added code to handle new option, -Z,
+	to use XOVER vice XHDR to get message-ids, in case the 
+	remote server doesn't support the XHDR command.
+
+* xover.c - do_group_xover() - changed the error code returned
+	if server can't do xover command, so can recover 
+	gracefully from other errors (such as too long msgid)
+
+	get_xover(), find_msgid() - created.  These routines
+	use the XOVER command to get the Message-ID and alloc
+	it for the -Z option.
+
+	Moved xoverview pointer out of master killfile and into
+	master struct, so can use for -Z option.
+
+	- do_one_line() - added code so if we have a program
+	or perl subroutine to do the checking, it gets called
+
+11 May 1999 - suck-4.2.0 released
+
+-- Changes from Suck-4.1.1 -> Suck-4.1.2
+
+* suck.c -- do_supplemental() - added call to do_sup_bynr().
+
+	do_sup_bynr() - created.  Handles lines in suckothermsgs
+	that specify a group name and article number for retreival.
+
+14 Apr 1999 - suck-4.1.2 released
+
+-- Changes from Suck-4.1.0 -> Suck-4.1.1
+
+* suck.c - get_one_article() - fixed bug in sending command
+	for the second article, was resending first article
+	command.
+
+27 Mar 1999 - suck-4.1.1 released
+
+-- Changes from Suck-4.0.0 -> Suck-4.1.0
+
+* killfile.c - get_one_article_kill() - added code to handle
+	new option, -g, to get only the headers of articles.
+	See man pages for details.
+
+* suck.c - get_one_article() - added code to handle new option
+	-g, to get only the headers of articles.
+
+* xover.c - chk_a_group() - fix bug in counting of Xref line,
+	causing inaccurate count.
+
+        do_one_line(), get_xoverview() - fixed handling of :full
+	flag in overview.fmt.
+
+22 Mar 99 - suck-4.1.0 released
+
+-- Changes from Suck-3.10.4 -> Suck-4.0.0
+
+* reworked restart code.  Got rid of suck.restart and suck.sorted,
+   replaced with suck.db, which contains the records of all messages.
+   All of this code is now contained in db.c.  Cleaned up the use of
+   the Mandatory field by creating separate delete and sentcmd fields.
+
+* chkhistory.c chkhistory() - fixed bug which caused no articles to be
+	checked, I wasn't passing the current article to my_bsearch().
+
+        chkhistory() - changed HISTORY_FILE to a run time option vice
+	the constant defined in the Makefile.
+
+* chkhistory_db.c 
+	chkhistory(), open_history() - changed HISTORY_FILE to a
+	run_time option.
+
+* killfile.c - added code to handle new killfile option NRXREF.
+	This works the same as NRGRPS, but on the Xref line
+	instead of the Newsgroups line.
+
+  killfile_done() - fixed bug in freeing perl_int.
+
+  check_a_group() - fixed bug in counting nr of groups.
+
+  pass_two() - fix bug if groupline didn't have group name, we could
+	core dump when trying to nuke nl.
+
+* ssort.c - changed params that my_bsearch is called with, to make
+	chkhistory faster.  Changed second param to string vice struct.
+
+* suck.c - do_cleanup() - fixed a bug with moving suck.newrc to sucknewsrc.
+	If we're restarted with -R, no suck.newrc would exist, and
+	we'd move sucknewsrc to sucknewsrc.old, and fail on the
+	move of suck.newrc to sucknewsrc.  Now if suck.newrc doesn't
+	exist, we don't move sucknewsrc either.
+
+	parse_args() - added code to handle history file option (HF).
+
+* xover.c - added code to handle to option NRXREF, like above.
+	Also added code to handle new option XOVER_LOG_LONG,
+	which causes suck to format xover kills so that they
+	look like message headers, instead of printing just
+	the Xover line.
+
+13 Mar 99 - Suck-4.0.0 released
+
+-- Changes from Suck-3.10.3 -> Suck-3.10.4
+
+* active.c - get_message_index_active() - added code to handle -F
+	option, reconnect after reading the active file.  This is
+	in case of a large active file, and the remote end times
+	out while reading it.
+
+* killprg.c - tweaked the #ifdef for the Perl 5.004 stuff
+
+* lmove.c - move_msg(), scan_args() - Added test to see if article
+	exists in new location before I move it.  This is to avoid
+	overwriting articles if another process adds articles to
+	directory without changing the active file.   If an article
+	already exists, I abort UNLESS you use the -A option.  See
+	man page for more details. 
+	
+   main() - rewrote tests for msgdir and basedir, to avoid segfaults
+	if not defined.
+
+* suck.c - main(), scan_args() - added code to handle -F option.
+
+* xover.c - get_xoverview() - fixed bug in parsing of xoverview, not
+	stripping the blanks and nls correctly.  Also fixed bug in
+	allocing of memory (had POverview vice Overview).
+
+25 Jan 1999 - Suck-3.10.4 released
+
+-- Changes from Suck-3.10.2 -> Suck-3.10.3
+
+* batch.c - do_post_filter() - created, allows you to edit all articles
+	downloaded.
+
+*batch.c - do_lmove_patch()
+*killprg.c - killprg_forkit()
+*rpost.c - do_filter - added exit(-1) so that if child doesn't execl,
+	we don't have both parent and child running.
+
+* chkhistory.c - chkhistory() - changed error_log() call to MyPerror()
+	for open of history file, so get more descriptive error msg.
+
+*  suck.c - main(), parse_args() - added arg handling for do_post_filter().
+
+   get_articles(), restart_yn() - re-worked the handling of restarts, to 
+	avoid downloading same article twice, or not downloading an article,
+	due to the de-duping process when I did a rescan for new articles,
+	so I had the same MsgId twice, then deleted the first one already
+	downloaded, and then downloaded it again.
+
+* dedupe.c - dedupe_list() - added code so that if one of a set of dupes
+	is marked as downloaded, or a dupe, I delete the other one 
+	instead, to help avoid the scenario above.	
+
+10 Dec 98  - Suck-3.10.3 released
+
+-- Changes from Suck-3.10.1 -> Suck-3.10.2
+
+* chkhistory.c - chkhistory() - changed to new, hopefully faster routine,
+	using ssort() and my_bsearch().
+
+* dedupe.c - dedupe_list() - changed to use  new routine to handle deduping
+	based on the ssort() routine.
+
+* ssort.c - created, contains ssort() and my_search().
+
+* suckutils.c - qcmp_msgid() - created for use by my_bsearch().
+
+* xover.c - do_group_xover(), do_one_line() - rewrote to fix bug in 
+	not handling multiple group keep/delete files.  
+
+8 Nov 98 - Suck-3.10.2 released
+
 -- Changes from Suck-3.10.0 -> Suck-3.10.1
 
 * chkhistory_db.c - open_history() - fixed typo in GDBM code had == where

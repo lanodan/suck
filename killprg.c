@@ -56,6 +56,8 @@
 #include <perl.h>
 #ifndef ERRSV
 # define ERRSV (GvSV(errgv))  /* needed for perl 5.004 and earlier */
+#endif
+#ifndef PL_na
 # define PL_na (na)
 #endif
 #endif
@@ -73,7 +75,7 @@ int find_in_path(char *);
 RETSIGTYPE pipe_sighandler(int);
 #endif
 
-int killprg_forkit(PKillStruct mkill, char *args, int debug) {
+int killprg_forkit(PKillStruct mkill, char *args, int debug, int which) {
 /*------------------------------------------------------------------------ */
 /* take the char string args, parse it to get the program to check to see  */
 /* if it exists, then try to fork, execl, and set up pipe to it.  If       */
@@ -81,11 +83,7 @@ int killprg_forkit(PKillStruct mkill, char *args, int debug) {
 /*-------------------------------------------------------------------------*/
 	int i, newstdin[2], newstdout[2], retval = FALSE;
 	char *prg[KILLPRG_MAXARGS+1], *myargs = NULL, *ptr, *nptr;
-
-	/* initialize the master struct */
-	mkill->child.Stdin = mkill->child.Stdout = -1;
-	mkill->child.Pid = -1;
-
+	
 	/* first parse args into array */
 	i = strlen(args);
 	/* do this so can muck around with string with messing up original */
@@ -149,6 +147,7 @@ int killprg_forkit(PKillStruct mkill, char *args, int debug) {
 				dup2(newstdin[0], 0);	/* copy new read to stdin */
 				dup2(newstdout[1], 1);	/* copy new write to stdout */
 				execvp(prg[0], prg);
+				exit(-1); /* so if exec fails, we don't get two sucks running */
 			}
 			else if( mkill->child.Pid == -1) {
 			  	/* whoops */
@@ -167,7 +166,10 @@ int killprg_forkit(PKillStruct mkill, char *args, int debug) {
 				/* so subroutine can read/write to child */
 				mkill->child.Stdin = newstdin[1];
                                 mkill->child.Stdout = newstdout[0];
-				mkill->killfunc = chk_msg_kill_fork;	/* point to our subroutine */
+				if ( which == KILL_KILLFILE) {
+					/* we don't do this if it's an xover file, that's done otherwhere */
+					mkill->killfunc = chk_msg_kill_fork;	/* point to our subroutine */
+				}
 			}
 		}
 	
@@ -358,7 +360,7 @@ RETSIGTYPE pipe_sighandler(int what) {
 /* MUCH OF THIS CODE COMES From the PERLEMBED man pages that comes */
 /* with perl */
 /*---------------------------------------------------------------------*/
-int killperl_setup(PKillStruct master, char *prg, int debug) {
+int killperl_setup(PKillStruct master, char *prg, int debug, int which) {
 	int retval = TRUE;
 	char *ptr = NULL;
 
@@ -378,7 +380,10 @@ int killperl_setup(PKillStruct master, char *prg, int debug) {
                 prgs[1] = prg;
                 if(perl_parse(master->perl_int, NULL, 2, prgs, NULL) == 0) {
 			perl_run(master->perl_int);
-			master->killfunc = chk_msg_kill_perl;
+			if(which == KILL_KILLFILE) {
+				/* we don't do this for xover, it's handled separately */
+				master->killfunc = chk_msg_kill_perl;
+			}
 		}
 		else {
 			error_log(ERRLOG_REPORT, killp_phrases[15], prg, NULL);
@@ -455,6 +460,199 @@ int chk_msg_kill_perl(PMaster master, PKillStruct killp, char *hdr, int hdrlen) 
 		}
         }
 
+	return retval;
+}
+#endif
+/*---------------------------------------------------------------------------------*/
+void killprg_sendoverview(PMaster master) {
+
+	PKillStruct killp;
+	POverview overp;
+	char buf[MAXLINLEN], len[KILLPRG_LENGTHLEN+1];
+	int count, status;
+	pid_t waitstatus;
+#ifdef PERL_EMBED
+	char *args[2] = { NULL, NULL};
+#endif
+	
+	killp = master->xoverp;
+	overp = master->xoverview;
+	
+	/* send the overview.fmt to the child process, if it exists */
+	if(killp != NULL && overp != NULL) {
+		/* first, rebuild the overview.fmt */
+		count = 0;
+		buf[0] = '\0';
+		while(overp != NULL) {
+			if(count > 0) {
+				strcat(buf, "\t"); /* add the separator */
+			}
+			strcat(buf, overp->header);
+			if(overp->full == TRUE) {
+				strcat(buf, "full");
+			}
+			overp = overp->next;
+			count++;
+		}
+		strcat(buf, "\n");
+		count = strlen(buf);
+		if(killp->child.Pid != -1) {
+			waitstatus = waitpid(killp->child.Pid, &status, WNOHANG);
+			if(waitstatus == 0) {
+				if(master->debug == TRUE) {
+					do_debug("sending overview.fmt, len = %d - %s", count, buf);
+				}
+						/* first write the length down */
+				sprintf(len, "%-*d\n", KILLPRG_LENGTHLEN-1, count);
+				if(write(killp->child.Stdin, len, KILLPRG_LENGTHLEN) <= 0) {
+					error_log(ERRLOG_REPORT,  killp_phrases[4], NULL);		
+				}
+				/* then write the actual header */
+				else if(write(killp->child.Stdin, buf, count) <= 0) {
+					error_log(ERRLOG_REPORT,  killp_phrases[4], NULL);
+				}
+			}
+		}
+#ifdef PERL_EMBED
+		/* this code comes from the both perlembed and perlcall man pages */
+
+		else if(killp->perl_int != NULL) {
+			dSP; /* Perl stack pointer */
+
+			/* first set up args */
+			args[0] = buf;
+			if(master->debug == TRUE) {
+				do_debug("Calling %s\n", PERL_OVER_SUB);
+			}
+
+			ENTER;
+			SAVETMPS;
+			PUSHMARK(SP);
+	
+			status = perl_call_argv(PERL_OVER_SUB, G_VOID | G_EVAL | G_KEEPERR, args);
+			SPAGAIN;
+	
+			if(SvTRUE(ERRSV)) {
+				error_log(ERRLOG_REPORT, killp_phrases[16], SvPV(ERRSV,PL_na), NULL);
+				POPs;
+				killperl_done(killp);
+			}
+			else if(status != 1) {
+				if(master->debug == TRUE) {
+					do_debug("return from perl_call_argv = %d\n", status);
+				}
+				
+				error_log(ERRLOG_REPORT, killp_phrases[17], PERL_OVER_SUB, NULL);
+				killperl_done(killp);
+			}
+			PUTBACK;
+			FREETMPS;
+			LEAVE;
+		}
+#endif
+	}
+}
+/*----------------------------------------------------------------------------------*/
+int killprg_sendxover(PMaster master, char *linein) {
+
+	/* this is almost a carbon copy of chk_msg_kill_fork() */
+	int retval = FALSE, status, headerlen;
+	char keepyn, keep[4], len[KILLPRG_LENGTHLEN+1];
+	pid_t waitstatus;
+	PKillStruct pkill;
+
+	headerlen = strlen(linein);
+	pkill = master->xoverp;
+	
+	/* first make sure our child is alive WNOHANG so if its alive, immed return */
+	keepyn = -1;	/* our error status */
+	waitstatus = waitpid(pkill->child.Pid, &status, WNOHANG);
+	if(waitstatus == 0) { /* child alive */
+		if(master->debug == TRUE) {
+			do_debug("Writing to child\n");
+		}
+		/* first write the length down */
+		sprintf(len, "%-*d\n", KILLPRG_LENGTHLEN-1, headerlen);
+		if(write(pkill->child.Stdin, len, KILLPRG_LENGTHLEN) <= 0) {
+			error_log(ERRLOG_REPORT,  killp_phrases[4], NULL);		
+		}
+		/* then write the actual header */
+		else if(write(pkill->child.Stdin, linein, headerlen) <= 0) {
+			error_log(ERRLOG_REPORT,  killp_phrases[4], NULL);
+		}
+		/* read the result back */
+		else {
+			if(master->debug == TRUE) {
+				do_debug("Reading from child\n");
+			}
+			if(read(pkill->child.Stdout, &keep, 2) <= 0) {
+				error_log(ERRLOG_REPORT,  killp_phrases[5], NULL);
+			}
+			else {
+				if(master->debug == TRUE) {
+					keep[2] = '\0';	/* just in case */
+					do_debug("killprg: read '%s'\n", keep);
+				}
+				keepyn = keep[0] - '0';	/* convert ascii to 0/1 */ 
+			}
+		}
+	}
+	else if(waitstatus == -1) { /* huh? */
+		MyPerror( killp_phrases[6]);
+	}
+	else { /* child died */
+		error_log(ERRLOG_REPORT,  killp_phrases[7], NULL);
+	}
+
+	retval = ( keepyn == 1) ? TRUE : FALSE;
+	
+	return retval;
+}
+/*-----------------------------------------------------------------------------------*/
+#ifdef PERL_EMBED
+int killperl_sendxover(PMaster master, char *linein) {
+
+	/* this routine is almost a carbon copy  of chk_msg_kill_perl() */
+
+	int i, retval = FALSE;
+	char *args[2] = { NULL, NULL};
+	
+	dSP; /* Perl stack pointer */
+
+	/* first set up args */
+	args[0] = linein;
+	if(master->debug == TRUE) {
+		do_debug("Calling %s\n", PERL_XOVER_SUB);
+	}
+
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	
+	i = perl_call_argv(PERL_XOVER_SUB, G_SCALAR | G_EVAL | G_KEEPERR, args);
+	SPAGAIN;
+	
+	if(SvTRUE(ERRSV)) {
+                error_log(ERRLOG_REPORT, killp_phrases[16], SvPV(ERRSV,PL_na), NULL);
+		POPs;
+		killperl_done(master->xoverp);
+	}
+	else if(i != 1) {
+		error_log(ERRLOG_REPORT, killp_phrases[17], PERL_XOVER_SUB, NULL);
+		killperl_done(master->xoverp);
+	}
+	else {
+		/* 0 = keep 1 = delete */
+		i = POPi;
+		if(master->debug == TRUE) {
+			do_debug("retval = %d\n", i);
+		}
+		
+		retval = (i == 0) ? FALSE : TRUE;           
+	}
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
 	return retval;
 }
 #endif

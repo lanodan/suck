@@ -3,6 +3,7 @@
  
 int checkdir(const char *);
 const char *full_path(int, int, const char *);
+int qcmp_msgid(const char *, const char *);
 int cmp_msgid(const char *, const char *);
 int move_file(const char *, const char *);
 

@@ -72,7 +72,7 @@ static DBM *db = NULL;	/* I know this isn't too pretty, but its the easiest way 
 #endif
 
 /* function prototypes */
-int open_history(void);
+int open_history(const char *);
 int  check_history(char *);
 /*---------------------------------------------------------------------------------------------------*/
 void chkhistory(PMaster master) {
@@ -81,11 +81,11 @@ void chkhistory(PMaster master) {
 	int nrfound = 0;
 
 	if(master->debug == TRUE) {
-		do_debug("Opening history database: %s\n", HISTORY_FILE);
+		do_debug("Opening history database: %s\n", master->history_file);
 	}
 	
-	if(open_history() != TRUE) {
-		error_log(ERRLOG_REPORT, chkh_phrases[0], HISTORY_FILE, NULL);
+	if(open_history(master->history_file) != TRUE) {
+		error_log(ERRLOG_REPORT, chkh_phrases[0], master->history_file, NULL);
 	}
 	else {
 
@@ -134,13 +134,13 @@ void chkhistory(PMaster master) {
 	return;
 }
 /*------------------------------------------------------------------------*/
-int open_history(void) {
+int open_history(const char *history_file) {
 	
 	int retval = FALSE;
 
 #if defined (USE_DBM) || defined (USE_DBZ)
 
-	if(dbminit(HISTORY_FILE) >= 0) {
+	if(dbminit(history_file) >= 0) {
 		retval = TRUE;
 	}
 #endif
@@ -156,16 +156,16 @@ int open_history(void) {
 #endif
 	opt.exists_incore=INCORE_MEM;
 	dbzsetoptions(opt);
-	retval = dbzinit(HISTORY_FILE);
+	retval = dbzinit(history_file);
 #endif
 	
 #if defined (USE_NDBM)
-	if((db = dbm_open(HISTORY_FILE, O_RDONLY, 0)) != NULL) {
+	if((db = dbm_open(history_file, O_RDONLY, 0)) != NULL) {
 		retval = TRUE;
 	}
 #endif
 #if defined(USE_GDBM)
-	if((dbf = gdbm_open(HISTORY_FILE, 1024, GDBM_READER,0,0)) != NULL) {
+	if((dbf = gdbm_open(history_file, 1024, GDBM_READER,0,0)) != NULL) {
 		retval = TRUE;
 	}
 #endif

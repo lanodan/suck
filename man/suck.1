@@ -1,4 +1,4 @@
-.\" $Revision: 3.10.0 $
+.\" $Revision: 4.2.0 $
 .TH SUCK 1
 .SH NAME
 suck - Pull a small newsfeed from an NNTP server, avoiding the NEWNEWS command.
@@ -26,6 +26,10 @@ filename
 ]
 [
 .BI \-H
+]
+[
+.BI \-HF
+filename
 ]
 [
 .BI \-d[tmd]
@@ -148,6 +152,23 @@ timeout
 [
 .BI \-f
 ]
+[
+.BI \-y
+post_filter
+]
+[
+.BI \-F
+]
+[
+.BI \-g
+]
+[
+.BI \-i
+number_to_read
+]
+[
+.BI \-Z
+]
 
 Options valid in all modes
 
@@ -252,6 +273,18 @@ will then be sent to this file.
 This option tells suck to reconnect after deduping, and before downloading the articles.  This is in case
 long dedupe times cause timeouts on the remote end. 
 
+\-F
+
+This option tells suck to reconnect after reading the local active file, and before downloading the Msg-IDs.
+This is in case of a large active file, which causes timeouts on the remote end.
+
+\-g
+
+This option causes suck to only download the headers of any selected articles.
+As a result of this, any batching of articles is skipped.   This option does
+work with killfiles, however, killfile options such as BODYSIZE> will be
+ignored, since the body of the article will never be downloaded.
+ 
 \-G
 
 This option causes suck to display the message count and BPS status lines in a slightly different format,
@@ -261,9 +294,20 @@ more suitable for use by a filter program (such as a GUI).
 
 This option will cause suck to bypass the history check.
 
+\-HF history_file_name
+
+This option tells suck the location of the history file.  The default is at /usr/news/db/history.
+
 \-hl localhost
 
 This option specifies the localhost name.  This option is required with both the \-A and the \-bp option.  
+
+\-i number_to_read
+
+This option tells suck the number of articles to download if you are using the -A
+or -AL option, and a new group is added.   The default is defined in suck_config.h (ACTIVE_DEFAULT_LASTREAD, currently -100).  NOTE:  This must be a negative
+number (eg -100, -50), or 0, to download all articles currently available in 
+the group.
 
 \-k
 
@@ -405,11 +449,22 @@ is for brain dead NNTP servers that truncate the XHDR information at 72 characte
 
 This option tells suck to bypass the XOVER killfiles.
 
+\-y post_filter
+
+This option is only valid when using any of batch modes.  It allows you to edit any or all of
+the articles downloaded before posting to the local host.   See below for more details.
+
 \-z
 
 This option tells suck to bypass the normal deduping process.  This is primarily for
 slow machines where the deduping takes longer than the download of messages would.  Not
 recommended.
+
+\-Z
+
+This option tells suck to use the XOVER command vice the XHDR command to retrieve the 
+information needed to download articles.  Use this if your remote news server doesn't
+support the XHDR command.
 
 .SH LONG OPTION EQUIVALENTS
 .RS
@@ -447,6 +502,10 @@ recommended.
 .RE
 .RS
 \-f  \-\-reconnect_dedupe
+.RE
+.RS
+\-g  \-\-header_only
+.RE
 .RS
 \-h  \-\-host
 .RE
@@ -465,7 +524,7 @@ recommended.
 .RS
 \-n  \-\-number_mode
 .RE
-.RS
+.RS 
 \-p  \-\-postfix
 .RE
 .RS
@@ -482,6 +541,9 @@ recommended.
 .RE
 .RS
 \-x  \-\-no_chk_msgid
+.RE
+.RS
+\-y  \-\-post_filter
 .RE
 .RS
 \-z  \-\-no_dedupe
@@ -509,6 +571,9 @@ recommended.
 .RE
 .RS
 \-H  \-\-no_history
+.RE
+.RS
+\-HF \-\-history_file
 .RE
 .RS
 \-K  \-\-killfile
@@ -554,6 +619,10 @@ recommended.
 .RE
 .RS
 \-X  \-\-no_xover
+.RE
+.RS
+\-Z \-\-use_xover
+.RE
 
 .SH DESCRIPTION
 
@@ -752,7 +821,8 @@ flagged for deletion, otherwise it is kept.  This is done for every group on the
 NOTES: With the exception of the USE_EXTENDED_REGEX parameter, none of these parameters are
 passed from the master killfile to the individual group file.  Each killfile is separate
 and independant.  Also, each search is case-insensitive unless specifically specified by starting the
-search string with the QUOTE character (see below).
+search string with the QUOTE character (see below).  However, the parameter part of the
+search expression (the LOWLINE=, HILINE= part) is case sensitive.
 .SH
 PARAMETERS
 .RS
@@ -763,6 +833,9 @@ HILINES=#######
 .RE
 .RS
 NRGRPS=####
+.RE
+.RS
+NRXREF=####
 .RE
 .RS
 QUOTE=c
@@ -788,6 +861,9 @@ GROUP_OVERRIDE_MASTER
 .RE
 .RS
 USE_EXTENDED_REGEX
+.RE
+.RS
+XOVER_LOG_LONG
 .RE
 .RS
 HEADER:
@@ -819,10 +895,18 @@ Match any article longer than the number of lines specified.
 Match any article shorter than the number of lines specified.
 .PP
 .I NRGRPS=
-This line will match any article which has more groups than the number specified.
+This line will match any article which has more groups than the number specified
+on the Newsgroups: line.
 Typically this is used in a killfile to prevent spammed articles.
 (A spammed article is one that is posted to many many groups, such
 as those get-rich quick schemes, etc.)
+.PP
+.I NRXREF=
+This line will match any article that has more groups than than the number specified
+on the Xref: line.  This is another spamm stopper.  WARNING: the Xref: line is not
+as accurate as the Newsgroups: line, as it only contains groups known to the news
+server.   This option is most useful in an xover killfile, as in Xoverviews don't
+typically provide the Newsgroups: line, but do provide the Xref: line.
 .PP
 .I HEADER:
 .I Any Valid Header Line:
@@ -926,6 +1010,11 @@ It may used in the master killfile, in which case it applies to all killfiles, o
 individual killfile, where it only applies to the parameters that follow it in the
 killfile.
 .PP
+.I XOVER_LOG_LONG
+This option tells suck to format the killfile generated by from an Xover killfile so that
+it looks like an article header.  The normal output is to just print the Xover line
+from theserver.
+.PP
 .I PROGRAM=
 This line allows suck to call an external program to check each article.
 You may specify any arguments in addition to the program name on this line.
@@ -1007,9 +1096,6 @@ BODY:
 .RS
 TIEBREAKER_DELETE:
 .RE
-.RS
-PROGRAM:
-.RE
 .PP
 Only the following header lines will be checked:
 .RS
@@ -1032,19 +1118,70 @@ bytes or lines, respectively.
 .PP
 All other parameters are allowed.  However, if you use an invalid parameter,
 it is silently ignored.
+.SH SUCKXOVER and PROGRAM= or PERL= parameters
+These parameters are supported in a suckxover file, however they work slightly
+differently than described above.  The key difference is that prior to sending
+each individual xoverview line to your program, suck will send you the 
+overview.fmt listing that it retrieves from the server.  This overview.fmt
+is a tab-separated line, describing the fields in each overview.fmt line.
+.PP
+For the PROGRAM= parameter, suck will first send your program an 8 byte long
+string, which is the length of the overview.fmt.  This length is formatted
+as the lengths above (see nr1 under PROGRAM=).  Suck will then send the overview.fmt.
+After that, the flow is as described above.  See sample/killxover_child.c for
+an example.
+.PP
+For the PERL= parameter, Your program must have two subroutines.  The first
+is perl_overview, which will recieve the overview.fmt, and not return anything.
+The second subroutine is perl_xover, which will recieve the xoverview line,
+and return 0 or 1, as described in the PERL= above.  See sample/perl_xover.pl
+for an example.
 
 .SH SUCKOTHERMSGS
 If
 .I suckothermsgs
-exists, It must contain a one-per-line listing
-of Message-ID's, with the <> included.  These articles will then 
-be downloaded, in addition to any articles generated by processing
-the
-.I sucknewsrc
-file.  This can be used to get articles in other groups,
+exists, It must contain lines formatted in one of three ways.  The first way
+is a line containing a Message-ID, with the <> included, eg:
+
+.RS
+	<12345@somehost.com>
+.RE
+
+This will cause the article with that Message-ID to be retrieved.
+.PP
+The second way is to put a group name and article number on a line starting
+with an !, eg:
+.RS
+	!comp.os.linux.announce 1
+.RE
+
+This will cause that specific article to be downloaded.
+.PP
+You can also get a group of articles from a group by using the following syntax:
+.RS
+	!comp.os.linux.announce 1-10
+.RE
+.PP
+Whichever method you use, if the article specified exists, it will be downloaded,
+in addition to any articles retreived via the
+.I sucknewsrc.
+These ways can be used to get a specific article in other groups,
 or to download an article that was killed.  These articles
 .B ARE NOT
 processed through the kill articles routines.
+
+.SH POST FILTER
+if the 
+.BI "-y post_filter" 
+option is specified on the command line in conjunction with any of the batch modes,
+then suck will call the post filter specified, after downloading the articles, and
+before batching/posting the articles.
+The filter is passed the directory where the articles are stored (the -dm option).
+The filter program is responsible for parsing the contents of the directory.  See
+sample/post_filter.pl for a sample post filter.  This option was designed to
+allow you to add your own host name to the Path: header, but if you need to
+do anything else to the messages, you can.
+
 .SH FOREIGN LANGUAGE PHRASES
 If the
 .BI "-l phrases"

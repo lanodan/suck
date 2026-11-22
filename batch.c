@@ -24,6 +24,7 @@
 #  include <sys/dir.h>
 # endif
 #endif
+#include "suck_config.h"
 #include "suck.h"
 #include "both.h"
 #include "batch.h"
@@ -34,7 +35,7 @@
 
 /*--------------------------------------------------------*/
 /* function prototypes */
-int post_one_msg(PMaster, int, char *);  
+int post_one_msg(PMaster, int, char *);
 
 /*----------------------------------------------------------*/
 int do_innbatch(PMaster master) {
@@ -220,6 +221,7 @@ void do_lmovebatch(PMaster master) {
 		/* in child */
 		execvp(args[0], args);
 		MyPerror(batch_phrases[2]);	/* only get here on errors */
+		exit(-1); /* so we aren't running two sucks */
 	}
 	else if(pid < 0) {
 		/* whoops */
@@ -400,4 +402,35 @@ int post_one_msg(PMaster master, int sockfd, char *msg) {
 		
 	return retval;
 	
+}
+/*--------------------------------------------------------------------------*/
+void do_post_filter(PMaster master) {
+	/* call lpost filter prgm with batchfile as argument */
+	const char *msgdir;
+	pid_t pid;
+	
+	if(master->post_filter != NULL) {
+		msgdir = full_path(FP_GET, FP_MSGDIR, "");
+		if(master->debug == TRUE) {
+			do_debug("Running %s with %s as args\n", master->post_filter, msgdir);
+		}
+	
+		pid = fork();
+		if(pid == 0) {
+			/* in child */
+			if(execlp(master->post_filter, master->post_filter, msgdir, NULL) == -1) {
+				/* big error */
+				MyPerror(master->post_filter);
+				exit(-1); /* so we aren't running two sucks */
+			}		
+		}
+		else if(pid == -1) {
+			/* whoops */
+			MyPerror(master->post_filter);
+		}
+		else {
+			/* parent, wait on child */
+			wait(NULL);
+		}
+	}
 }

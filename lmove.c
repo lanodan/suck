@@ -1,6 +1,7 @@
 #include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -44,6 +45,8 @@ typedef struct {
 	FILE *msgs;
 	int nrgroups;
 	int debug;
+	int abort_exist; /* do we abort if article nr already exists */
+	int link_type;
 	PGroup groups;
 	char active_file[PATH_MAX+1];
 	const char *config_file;
@@ -54,6 +57,7 @@ typedef struct {
 
 enum { RETVAL_ERROR = -1, RETVAL_OK = 0 };
 enum { LOCKFILE_LOCK, LOCKFILE_UNLOCK };
+enum { LINK_SYM, LINK_HARD, LINK_NONE };
 
 #define NEWSGROUP "Newsgroups: "
 #define NEWSGROUP_LEN 12
@@ -78,13 +82,14 @@ int check_dirs(PMaster);
 char *make_dirname(char *, char *);
 int move_msgs(PMaster);
 char *find_groups(PMaster, char *);
-PGroup match_group(PMaster, char *);
+PGroup match_group(PMaster, char **);
 int rewrite_active(PMaster);
 int do_lockfile(PMaster, int);
 /*--------------------------------------------------------------------------------*/
 int main(int argc, char *argv[]) {
 
 	int retval = RETVAL_OK;
+	const char *ptr;
 	Master master;
 
 	/* set up defaults */
@@ -97,6 +102,8 @@ int main(int argc, char *argv[]) {
 	master.phrases = NULL;
 	master.basedir[0] = '\0';
 	master.msgdir = NULL;
+	master.abort_exist = TRUE;
+	master.link_type = LINK_NONE;
 
 	scan_args(&master, argc, argv);
 	load_phrases(&master);	/* this has to be here so rest prints okay */
@@ -110,8 +117,27 @@ int main(int argc, char *argv[]) {
 		do_debug("master.basedir = %s\n", master.basedir);
 		do_debug("master.msgdir = %s\n", (master.msgdir == NULL) ? "NULL" : master.msgdir);
 		do_debug("master.phrases = %s\n", (master.phrases == NULL) ? "NULL" :master.phrases);
+		ptr = "WHOOPS Wierd value for link_type";
+		switch (master.link_type) {
+		case LINK_SYM:
+			ptr = "SYMBOLIC";
+			break;
+		case LINK_HARD:
+			ptr = "HARD";
+			break;
+		case LINK_NONE:
+			ptr = "NO LINKS";
+			break;
+		}
+		do_debug("master.link_type = %s\n", ptr);
+		
 	}
-	if(master.basedir[0] == '\0' || master.msgdir[0] == '\0') {
+	if(master.basedir == NULL || master.basedir[0] == '\0') {
+		error_log(ERRLOG_REPORT, lmove_phrases[5], NULL);
+		retval = RETVAL_ERROR;
+	}
+	if(master.msgdir == NULL || master.msgdir[0] == '\0') {
+		error_log(ERRLOG_REPORT, lmove_phrases[7], NULL);
 		retval = RETVAL_ERROR;
 	}
 	
@@ -181,36 +207,87 @@ int move_msgs(PMaster master) {
 	char *ptr;
 	PGroup group;
 	char o_fname[PATH_MAX+1], n_fname[PATH_MAX+1];
+	struct stat sbuf;
+	int quit = FALSE, retval = RETVAL_OK, count;
+	int (*linkit)(const char *, const char *);
 
-
-	int retval = RETVAL_OK;
+	/* which type of link will we create, symbolic or hard? Point to the right function */
+	/* this won't get used if link_type is NONE, so we don't handle that case */
+	linkit = (master->link_type == LINK_SYM) ? symlink : link;
 
 	if((dptr = opendir(master->msgdir)) == NULL) {
 		MyPerror(master->msgdir);
 		retval = RETVAL_ERROR;
 	}
 	else {
-		while((entry = readdir(dptr)) != NULL) {
+		while(((entry = readdir(dptr)) != NULL) && quit == FALSE) {
 			sprintf(o_fname, "%s/%s", master->msgdir, entry->d_name);	/* build full path */
 			if(stat(o_fname, &statbuf) == 0 && S_ISREG(statbuf.st_mode)) {
 				if((ptr = find_groups(master, o_fname)) == NULL) {
 					error_log(ERRLOG_REPORT, lmove_phrases[11], entry->d_name, NULL);
 				}
-				else if((group = match_group(master, ptr)) == NULL) {
-					error_log(ERRLOG_REPORT, lmove_phrases[12], entry->d_name, NULL);
-				}
 				else {
-					/* try the move */
-					/* make destination filename */
-					sprintf(n_fname, "%s/%d", make_dirname(master->basedir, group->group), group->highnr);
-					if(rename(o_fname, n_fname) != 0) {
-						error_log(ERRLOG_REPORT, lmove_phrases[13], o_fname, n_fname, NULL);
-						MyPerror("");
+					count = 0; /* how many groups have we matched */
+					ptr += NEWSGROUP_LEN;	/* skip header */
+					/* we pass a pointer to a pointer so that the subroutine can modify it */
+					/* and return where we left off, so we can do multiple groups on one line */
+					while(ptr != NULL && *ptr != '\0' && (group = match_group(master, &ptr)) != NULL) {
+						count++;						
+						sprintf(n_fname, "%s/%d", make_dirname(master->basedir, group->group), group->highnr);
+						if(stat(n_fname, &sbuf) == 0) {
+							/* file exists */
+							if(master->abort_exist == TRUE) {
+								error_log(ERRLOG_REPORT, lmove_phrases[21], group->group, str_int(group->highnr), NULL);
+								quit = TRUE;
+							}
+							else {
+								while(stat(n_fname, &sbuf) == 0) {
+									/* up it and try again */
+									group->highnr++;
+									sprintf(n_fname, "%s/%d", make_dirname(master->basedir, group->group), group->highnr);
+								}
+							}
+						}
+						if(quit != TRUE) {
+							if(count == 1) {
+								/* first group gets the file */
+								if(rename(o_fname, n_fname) != 0) {
+									error_log(ERRLOG_REPORT, lmove_phrases[13], o_fname, n_fname, NULL);
+									MyPerror("");
+								}
+								else {
+									if(master->debug == TRUE) {
+										do_debug("Moved %s to %s\n", o_fname, n_fname, NULL);
+									}
+									
+									group->highnr++;
+									strcpy(o_fname, n_fname); /* so we can link to this file */
+								}
+							}
+							else if (master->link_type == LINK_NONE) {
+								/* this will break the loop */
+								ptr = NULL;
+							}
+							else {
+								/* remainder of groups get links to first file */
+								/* call the function reffed earlier */
+								if(master->debug == TRUE) {
+									do_debug("linking %s to %s\n", n_fname, o_fname, NULL);
+								}
+								
+								if((*linkit)(o_fname, n_fname) != 0) {
+									MyPerror(n_fname);
+								}
+								else {
+									group->highnr++;
+								}
+							}
+						}
 					}
-					else {
-						group->highnr++;
+					if(count == 0) {
+						error_log(ERRLOG_REPORT, lmove_phrases[12], entry->d_name, NULL);
 					}
-				}
+				}				
 			}
 		}
 		closedir(dptr);
@@ -219,19 +296,28 @@ int move_msgs(PMaster master) {
 	return retval;
 }
 /*-----------------------------------------------------------------------------------*/
-PGroup match_group(PMaster master, char *newsgroups) {
+PGroup match_group(PMaster master, char **newsgroups) {
 	PGroup retval = NULL;
 	int i;
 	char *ptr, *eptr, save; 
+        /* this gets a null-terminated line of newsgroups */
+	
+	ptr = eptr = *newsgroups; /* this is a pointer to a pointer, so can do multiple groups per line */
 
-	ptr = eptr = &newsgroups[NEWSGROUP_LEN];	/* skip header */
+	/* in case the newsgroup line is formatted badly, and has extra spaces in the front */
+	while (isspace(*ptr)) {
+		ptr++;
+		eptr++;
+	}
 	do {
 		/* first find end of this group or NULL */
-		while(*eptr != GROUP_SEP && *eptr != '\0') {
+		/* the isspace handles the case where they use spaces either between */
+		/* groups, or at the end of the line. */
+		while(*eptr != GROUP_SEP && *eptr != '\0' && !isspace(*eptr) && *eptr) {
 			eptr++;
 		}
 		save = *eptr;
-		*eptr = '\0';	/* so can return ptr as group name */
+		*eptr = '\0';	/* so can use ptr as group name */
 
 		for(i = 0 ; retval == NULL && i < master->nrgroups;i++) {
 			if(strcmp(master->groups[i].group, ptr) == 0) {
@@ -244,6 +330,15 @@ PGroup match_group(PMaster master, char *newsgroups) {
 		}
 		ptr = ++eptr;	/* set up for next group */
 	} while( save != '\0' && retval == NULL);
+	/* the eptr -1 is because the ++eptr above puts us 1 beyond the EOL */
+	if(retval == NULL) {
+		/* if no matches , return EOL */
+		*newsgroups = eptr -1;
+	}
+	else {
+		/* if at end of line, return that, else return start of next group */
+		*newsgroups  = (save == '\0') ? eptr-1 : eptr;
+	}
 	return retval;
 }
 /*-----------------------------------------------------------------------------------*/
@@ -265,6 +360,9 @@ char *find_groups(PMaster master, char *fname) {
 				i = strlen(linein) - 1;
 				if(linein[i] == '\n') {
 					linein[i] = '\0';
+				}
+				if(master->debug == TRUE) {
+					do_debug("Found newsgroup line--%s--\n",linein, NULL);
 				}
 			}
 		}
@@ -307,7 +405,7 @@ int load_config(PMaster master) {
 }	
 /*-----------------------------------------------------------------------------------*/
 int load_active(PMaster master) {
-	int i, retval = RETVAL_OK;
+	int i, j, retval = RETVAL_OK;
 	unsigned int lownr, highnr;
 	FILE *fpi;
 	char linein[MAXLINLEN+1], group[MAXLINLEN+1], active_char;
@@ -348,8 +446,15 @@ int load_active(PMaster master) {
 					master->groups[i].lownr = lownr;
 					master->groups[i].highnr = highnr;
 					master->groups[i].active = active_char;
-					
-					if((master->groups[i].group = malloc(strlen(group)+1)) == NULL) {
+					/* now check for dupe groups */
+					for(j = 0 ; j < i; j++) {
+						if(strcmp(master->groups[j].group, group) == 0) {
+							error_log(ERRLOG_REPORT, lmove_phrases[22], group, NULL);
+							retval = RETVAL_ERROR;
+							break; /* so we don't check any further */
+						}
+					}
+					if((retval == RETVAL_OK) && ((master->groups[i].group = malloc(strlen(group)+1)) == NULL)) {
 						error_log(ERRLOG_REPORT, lmove_phrases[8], NULL);
 						retval = RETVAL_ERROR;
 					}
@@ -454,29 +559,7 @@ void scan_args(PMaster master, int argc, char *argv[]) {
 		}
 		else {
 			switch(argv[loop][1]) {
-			  case 'e':	/* use default error log path */
-				error_log(ERRLOG_SET_FILE, ERROR_LOG,NULL);
-				break;
-			  case 'E':	/* error log path */
-				if(loop+1 == argc) { 
-					error_log(ERRLOG_REPORT, "%s\n",lmove_phrases[1],NULL);
-				}
-				else {
-					error_log(ERRLOG_SET_FILE, argv[++loop], NULL);
-				}
-				break;
-			  case 'l': 	/* language  phrase file */
-				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, lmove_phrases[4],NULL);
-				}
-				else {
-					master->phrases = argv[++loop];
-				}
-				break;
-			  case 'D':	/* debug */
-				master->debug = TRUE;
-				break;
-			  case 'a':	/* active file */
+			case 'a':	/* active file */
 				if(loop+1 == argc) {
 					error_log(ERRLOG_REPORT, lmove_phrases[6], NULL);
 				}
@@ -484,7 +567,10 @@ void scan_args(PMaster master, int argc, char *argv[]) {
 					strcpy(master->active_file,argv[++loop]);
 				}
 				break;
-			  case 'c': /* config file */
+			case 'A': /* don't abort if article nr already exists on disk */
+				master->abort_exist = FALSE;
+				break;
+			case 'c': /* config file */
 				if(loop+1 == argc) {
 					error_log(ERRLOG_REPORT, lmove_phrases[19], NULL);
 				}
@@ -492,7 +578,7 @@ void scan_args(PMaster master, int argc, char *argv[]) {
 					master->config_file =argv[++loop];
 				}
 				break;
-			  case 'd': 	/* article directory */
+			case 'd': 	/* article directory */
 				if(loop+1 == argc) {
 					error_log(ERRLOG_REPORT, lmove_phrases[7], NULL);
 				}
@@ -500,7 +586,35 @@ void scan_args(PMaster master, int argc, char *argv[]) {
 					master->msgdir = argv[++loop];
 				}
 				break;
-			  default:
+			case 'D':	/* debug */
+				master->debug = TRUE;
+				break;
+			case 'e':	/* use default error log path */
+				error_log(ERRLOG_SET_FILE, ERROR_LOG,NULL);
+				break;
+			case 'E':	/* error log path */
+				if(loop+1 == argc) { 
+					error_log(ERRLOG_REPORT, "%s\n",lmove_phrases[1],NULL);
+				}
+				else {
+					error_log(ERRLOG_SET_FILE, argv[++loop], NULL);
+				}
+				break;
+			case 'h':       /* use hard vice symbolic links */
+				master->link_type = LINK_HARD;
+				break;
+			case 'l': 	/* language  phrase file */
+				if(loop+1 == argc) {
+					error_log(ERRLOG_REPORT, lmove_phrases[4],NULL);
+				}
+				else {
+					master->phrases = argv[++loop];
+				}
+				break;
+			case 's':       /* do symbolic links */
+				master->link_type = LINK_SYM;
+				break;
+			default:
 				error_log(ERRLOG_REPORT, lmove_phrases[0], argv[loop],NULL);
 				break;
 			

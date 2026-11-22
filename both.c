@@ -341,7 +341,11 @@ int sgetline(int fd, char **inbuf) {
 			/* block so we can't get interrupted by our signal defined in config.h */
 #endif
 			/* the fd+1 so we only scan our needed fd not all 1024 in set */
-			if((i = select(fd+1, &myset, (fd_set *) NULL, (fd_set *) NULL, &mytimes)) == 1) { 
+			/*if((i = select(fd+1, &myset, (fd_set *) NULL, (fd_set *) NULL, &mytimes)) == 1) { */
+			if((i = select(fd+1, &myset, (fd_set *) NULL, (fd_set *) NULL, &mytimes)) > 0) {
+#ifdef DEBUG1
+				do_debug("SELECT got: %d\n", i);
+#endif
 				i = recv(fd, eob, MAXLINLEN-len, 0);	/* get line */
 			}
 			else if(i == 0) {
@@ -350,12 +354,19 @@ int sgetline(int fd, char **inbuf) {
 #else 
 			i = recv(fd, eob, MAXLINLEN-len, 0);	/* get line */
 #endif
-#ifdef DEBUG1
-			do_debug("\nSELECT/RECV returned %d", i);
-#endif
+
 #ifdef MYSIGNAL
 			signal_block(MYSIGNAL_UNBLOCK);
 			/* we are done, now unblock it */
+#endif
+#ifdef DEBUG1
+			do_debug("\nRECV returned %d", i);
+			if ( i > 0) {
+				do_debug("\nGOT: ");
+				do_debug_binary(i,eob);
+				do_debug(":END GOT");
+			}
+			
 #endif
 
 			if(i < 1) {
@@ -372,11 +383,7 @@ int sgetline(int fd, char **inbuf) {
 
 				eob += i;	/* increment buffer end */
 				*eob = '\0';	/* NULL terminate it  */
-#ifdef DEBUG1
-				do_debug("\nGOT: ");
-				do_debug_binary(i,eob-i);
-				do_debug(":END GOT");
-#endif 
+
 				len += i;				
 				ptr = findnl(start, eob);
 			}
@@ -430,6 +437,8 @@ int sgetline(int fd, char **inbuf) {
 		eob = start = buf;
 #ifdef DEBUG1
 		do_debug("EMPTY BUFFER, resetting to start\n");
+		/* take this out when debugged */
+		memset(buf, '\0', sizeof(buf));
 #endif
 	}
 

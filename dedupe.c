@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #include "suck_config.h"
 #include "suck.h"
@@ -10,93 +11,62 @@
 #include "suckutils.h"
 #include "phrases.h"
 #include "timer.h"
+#include "ssort.h"
 
-/* this is almost an exact duplicate of the chkhistory() routine */
-/*-------------------------------------------------------------------------------------------------------*/
-/* We'll build an array of pointers to the linked list, based on a character of the article id		 */
-/* then we only have to check the article ids that match the character, saving searching thru the list	 */
-/*-------------------------------------------------------------------------------------------------------*/
-
-#define NR_LETTERS 128		/* nr of chars indexed, only 128 since rfc doesn't support > 128 */
-#define LETTER_TO_CHECK	2	/* which letter to check in MSG_ID */
+/* this is almost a duplicate of chkhistory() routine. */
 
 void dedupe_list(PMaster master) {
-	
-	int i, j, x, nrfound = 0;
-	PList curr, prev, *lets;
-	long tlet[NR_LETTERS];
-	struct {
-		long nr;
-		long start;
-	} letters[NR_LETTERS];	
+	/* throw the items into an array, qsort em, and then just compare items in a row to dedupe */
 
+	PList *array, ptr, curr, prev;
+	int i=0, nrfound=0;
+	
 	print_phrases(master->msgs, dedupe_phrases[0], NULL);
 	fflush(master->msgs);	/* so msg gets printed */
 
 	TimerFunc(TIMER_START, 0L, NULL);
 
-	/* pass one */
-	/* count the letters, so we can build the array and also index it */
-		
-	/* initialize the arrays */
-	for(i=0;i<NR_LETTERS;i++) {
-		letters[i].nr = letters[i].start = tlet[i] = 0;
-	}
-	curr = master->head;
-	while(curr != NULL) {
-		letters[((curr->msgnr[LETTER_TO_CHECK]) % NR_LETTERS)].nr++;
-		/* the % is in case a wacko article id slips by */
-		curr = curr->next;
-	}
-	/* now build the array with the starting points for each */
-	/* nr 0 starts on zero so skip it */
-	for(i=1;i<NR_LETTERS;i++) {
-		letters[i].start = letters[i-1].start + letters[i-1].nr;
-	}
-	
-	/* pass two */
-	/* first malloc the array */
-	if ((lets = (PList *) calloc(master->nritems, sizeof(PList))) == NULL) {
+	/* 1. throw em into the array */
+	if((array = calloc(master->nritems, sizeof(PList))) == NULL) {
 		error_log(ERRLOG_REPORT, dedupe_phrases[1], NULL);
 	}
 	else {
-		/* now put them in place */
-		curr = master->head;
-		while(curr != NULL) {
-			j = (curr->msgnr[LETTER_TO_CHECK]) % NR_LETTERS;
-			i = letters[j].start + tlet[j];
-			tlet[j]++;	/* so go to next slot */
-			lets[i] = curr;
-			curr = curr->next;
+		ptr = master->head;
+		i = 0;
+		while(ptr != NULL) {
+			array[i] = ptr;
+			i++;
+			ptr = ptr->next;
 		}
+	
+		TimerFunc(TIMER_START, 0L, NULL) ;
+		
+		/* step 2, sort em */
+		ssort(array, master->nritems, 1);  /* start with depth of 1 cause all start with < */
 
-		/* pass three */
-		/* now we can work our way down the linked list */
-		/* and check against letter only */
-		curr = master->head;
-		while(curr != NULL) {
-			j = (curr->msgnr[LETTER_TO_CHECK]) % NR_LETTERS;
-			for(i=0;i<letters[j].nr;i++) {
-				x = letters[j].start+i;
-				/* need the curr != lets[x] so that we don't delete ourself */
-				if(lets[x] != NULL && curr != lets[x] && cmp_msgid(curr->msgnr, lets[x]->msgnr)==TRUE) {
-					nrfound++;
-					if(master->debug == TRUE) {
-						do_debug("Matched %s, nuking\n", curr->msgnr);
-					}
-					/* now flag it for deletion */
-					lets[x]->msgnr[0] = '\0';	/* no more article nr */
-					lets[x] = NULL;			/* so don't check it again */
+		/* TimerFunc(TIMER_TIMEONLY, 0L, master->msgs); */
+		
+		
+		/* step 3, mark dupes */
+		for(i=0;i<(master->nritems-1);i++) {
+			if(cmp_msgid(array[i]->msgnr,array[i+1]->msgnr) == TRUE) {
+				/* if this is one we've already downloaded, or one we've already marked as dupe */
+				/* delete the other one */
+				if(array[i]->delete == TRUE || array[i]->downloaded == TRUE) {
+					array[i+1]->delete = TRUE;
 				}
+				else {
+					array[i]->delete = TRUE;
+				}
+				
+				nrfound++;
 			}
-			curr = curr->next;
 		}
-		/* pass four */
-		/* now go thru and delete em */
+		/* step 4, delete em */
 		curr = master->head;
 		prev = NULL;
 		while(curr != NULL) {			
-			if( curr->msgnr[0] == '\0') {
+			if( curr->delete == TRUE) {
 				/* nuke it */
 				master->nritems--;
 				if(prev == NULL) {
@@ -114,12 +84,14 @@ void dedupe_list(PMaster master) {
 			else {
 				prev = curr;
 				curr = curr->next;
-			}
+			}				
 		}
-		free(lets);
+		
+		/* all done free up mem */
+		free(array);
 	}
-
 	TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
 
 	print_phrases(master->msgs, dedupe_phrases[2], str_int(master->nritems),  str_int(nrfound), NULL);
 }
+

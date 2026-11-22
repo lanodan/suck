@@ -21,6 +21,8 @@ const char *default_lmove_phrases[] = {
 	"Unable to create Lock File %v1%\n",
 	"No configuration file name provided\n",
 	"Invalid configuration file format\n", /* 20 */
+	"Group %v1% Article %v2% exists, aborting\n",
+	"Duplicate Group in active file - %v1%, aborting\n",
 };
 
 int nr_lmove_phrases = sizeof(default_lmove_phrases)/sizeof(default_lmove_phrases[0]);
