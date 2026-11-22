@@ -9,6 +9,7 @@ int sgetline(int fd, char **sbuf);
 int sputline(int fd, const char *outbuf);
 int connect_to_nntphost(const char *host, struct hostent **, FILE *, unsigned short int);
 char *number(char *sp, int *intPtr);
+char *get_long(char *, long *);
 struct hostent *get_hostent(const char *host);
 void signal_block(int);
 void error_log(int mode, const char *fmt, ...);
@@ -20,13 +21,14 @@ void free_array(int, char **);
 char *do_a_phrase(char []);
 void print_phrases(FILE *, const char *, ...);
 char *str_int(int);
+char *str_long(long);
 void do_debug(const char *, ...);
 void do_debug_binary(int, const char *);
 
 #define N_DEBUG "debug.suck"
 
 enum { MYSIGNAL_SETUP, MYSIGNAL_BLOCK, MYSIGNAL_UNBLOCK, MYSIGNAL_ADDPIPE };
-enum { ERRLOG_SET_FILE, ERRLOG_SET_STDERR, ERRLOG_REPORT };
+enum { ERRLOG_SET_FILE, ERRLOG_SET_STDERR, ERRLOG_REPORT, ERRLOG_SET_DEBUG };
 
 #define SOCKET_PROTOCOL 0	/* so testhost.c can get at it */
 

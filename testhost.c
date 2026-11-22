@@ -38,11 +38,10 @@ struct {
 	      { "list", 215 },
 	      { "list newsgroups", 215 },
 	      { "newgroups", 231},
-	      { "mode reader\r\nnewgroups", 231},
-	      
+	      { "list overview.fmt", 215},	      
 };
 
-enum { CMD_HELP, CMD_LIST, CMD_DESC, CMD_NEWGRP };
+enum { CMD_HELP, CMD_LIST, CMD_DESC, CMD_NEWGRP, CMD_OVERVIEW };
 enum { RETVAL_OK = 0, RETVAL_ERROR = -1, RETVAL_BAD_DATES = -2, RETVAL_NOAUTH = -3};
 
 /*-functions----*/
@@ -54,7 +53,7 @@ void free_phrases(void);
 /*------------------------------------------------------------------*/
 int main(int argc, char *argv[]) {
 
-	int sockfd, response, loop, cmd, quiet, retval = RETVAL_OK;
+	int sockfd, response, loop, cmd, quiet, mode_reader, retval = RETVAL_OK;
 	struct hostent *hi;
 	struct stat sbuf;
 	unsigned short int portnr;
@@ -74,6 +73,7 @@ int main(int argc, char *argv[]) {
 	passwd = NULL;
 	userid = NULL;
 	phrases = NULL;
+	mode_reader = FALSE;
 	quiet = FALSE;		/* do we show status or not */
 
 	/* have to do this next so if set on cmd line, overrides this */
@@ -97,8 +97,14 @@ int main(int argc, char *argv[]) {
 			  case 'd':
 				  cmd = CMD_DESC;
 				  break;
+			  case 'o':
+				  cmd = CMD_OVERVIEW;
+				  break;
 			  case 'q':
 				  quiet = TRUE;
+				  break;
+			  case 'M':
+				  mode_reader = TRUE;
 				  break;
 			  case 'n':
 				cmd = CMD_NEWGRP;
@@ -225,6 +231,10 @@ int main(int argc, char *argv[]) {
 				retval = RETVAL_ERROR;
 			}
 			else {
+				if(mode_reader == TRUE) {
+					sputline(sockfd, "mode reader\r\n");
+					sgetline(sockfd, &buf);
+				}
 				do_a_command(sockfd, cmd, fptr, cmdargs, userid, passwd);
 			}
 		}
@@ -404,5 +414,3 @@ void free_phrases(void) {
 		}
 		
 }
-		
-		

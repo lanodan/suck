@@ -16,6 +16,10 @@
 /* This is the character that is used as a comment flag in col 0 in killfiles */
 #define KILLFILE_COMMENT_CHAR '#'
 
+/* This is the character used in killfiles to tell if we should always do a non-regex */
+/* compare on the string.  It can be overridden in a killfile. */
+#define KILLFILE_NONREGEX '%'
+
 /* this is the start buffer size for the killfile get body routine */
 /* this should be close to the max size of the message you expect to get */
 #define KILL_BODY_BUF_SIZE 80960
@@ -72,14 +76,18 @@
 /* Comment character in arg file, everything after this on a line is ignored */
 #define FILE_ARG_COMMENT '#'
 
+/* String used in RPOST to search for Duplicate Message-ID responses from server */
+#define RPOST_DUPE_STR "Duplicate"
+
 /*  FILE NAMES */
 /* Data files read in */
 #define N_OLDRC 	"sucknewsrc"		/* what newsgroups to download			 */
-#define N_KILLFILE 	"suckkillfile"		/* Parameter file for which articles s NOT to download */
+#define N_KILLFILE 	"suckkillfile"		/* Parameter file for which articles NOT to download via killfiles*/
 #define N_SUPPLEMENTAL 	"suckothermsgs"		/* list of article nrs to add to our list to download */
 #define N_LMOVE_ACTIVE  "active"		/* list of active newsgroups for lmove to read */
 #define N_ACTIVE_IGNORE "active-ignore"         /* list of newsgroups ignored by read local active option */
 #define N_LMOVE_CONFIG  "lmove-config"          /* config file for lmove */
+#define N_XOVER         "suckxover"             /* parameter file for which articles NOT to download via xover */
 
 #define N_PHRASES "/usr/local/lib/suck.phrases"	/* default location for phrase file */
 
@@ -152,6 +160,12 @@
 
 /* phrase that defines a group name in suck.sorted */
 #define RESTART_GROUP "GROUP"
+
+/* stuff needed for Perl killfile interpreter */
+#define PERL_PACKAGE_SUB "Embed::Persistant::perl_kill"
+
+/* stuff needed for Perl rpost interpreter */
+#define PERL_RPOST_SUB "Embed::Persistant::perl_rpost"
 
 /*------------------------------------------------------------*/
 /* the following should be handled by the auto-config stuff */

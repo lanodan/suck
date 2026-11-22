@@ -1,6 +1,174 @@
 
 CHANGES
 =======
+-- Changes from Suck-3.10.0 -> Suck-3.10.1
+
+* chkhistory_db.c - open_history() - fixed typo in GDBM code had == where
+	it should have been = .
+
+* killprg.c - added #define ERRSV and PL_na, since Perl 5.004 and earlier
+	don't have these.
+
+* rpost.c - main(), scan_args() - modified to handle perl embedded filter.
+
+* rpost.c - parse_perl(), perl_done(), do_perl() - created, handles embedded
+	perl subroutine for filtering files uploaded.
+
+* xover.c - get_xoverview() - fix bug in not initializing elements of the
+	linked list (next = NULL).
+
+13 Oct 98 - Suck-3.10.1 released
+
+-- Changes from Suck-3.9.4 -> Suck-3.10.0
+
+* both.c  - added tests for <net/socket.h> and <arpa/inet.h> for BEos,
+	it needs net/socket.h, everyone else needs the other one.
+	
+	error_log(), do_debug_vl()  - added code to handle printing of error
+        messages to do_debug().
+
+* chkhistory.c - chkhistory() - added code to check for valid lines, since
+	INN now has lines that begin with [, used by the DBZ code, and
+	we need to ignore them, and use only the lines that start with <.
+
+* chkhistory_db.c - open_history(), close_history() - added code for using
+      GDBM database.
+
+* killfile.c - parse_killfile(), do_debug() - changed to pointer and malloc
+	for master killfile, so can re-use routine to load in XOVER killfiles.
+	Added filename parameter, so can tell it what file to parse.  Changed
+	TRUE_STR() macro to use true_str function from suck.c
+
+	parse_a_file() - added initialization of bodybig and bodysmall.
+
+	parse_killfile(), parse_one_file() - changed so that if a killfile
+	evaluates to empty, we throw it away, so we don't spend time
+	finding groups for empty killfiles.
+
+	parse_killfile(), free_killfile() - changed to set up for embeded
+	perl killfile call.
+
+* killprg.c - killperl_setup(), killperl_done(), chk_msg_kill_perl() -
+        created, handles calling embedded perl subroutine for killfiles.
+
+* lpost.c - added include <string.h> to fix compile bug on SunOS.
+
+* rpost.c - do_article() - added code to test for a string to confirm
+	a duplicate post error message, since some servers don't use
+	a separate error code to dilineate these from other failures.
+
+	scan_args() - added call to error_log() so that error_log and 
+	MyPerror messages also go to debug.suck, if debug is true.
+
+* suck.c - main(), get_articles(), parse_args() - added code to change the
+        format of the BPS and count output to make it easier for a gui to
+        pick these out and display separately.  For use in my java gui, 
+	or anything else for that matter.  Added arg -G to toggle this on.
+
+	main() - changed calls to true_str() and null_str() from macros
+	to true functions, since they are used so much in debug code, so
+	as not not have 300 copies of "true" "false" and "null" in the
+	program.  Added -f option, to reconnect after deduping the
+	messages, in case of long dedupes, and the remote disconnects
+	due to time outs.
+
+	main(), parse_args() allocnode(), do_one_group()  - added code to
+	handle the new XOVER arg, to parse the xover killfiles, to allow
+	passing of article number, and to do the xover() call.
+
+	parse_args() - added call so if debug is set, error_log and MyPerror
+        reports to debug.suck.
+
+* testhost.c - main() - added -o option, to list the overview format, which
+	is what the XOVER command returns.  Added -M option, in case you
+	need the mode reader command for the -o option to work.
+
+* xover.c - created, holds code to process XOVER killfiles.
+
+5 Oct 98 - Suck-3.10.0 released
+
+-- Changes from Suck-3.9.3 -> Suck-3.9.4
+
+* active.c - add_to_list() - added code to do regular expression testing,
+       if your system supports regex().
+	   - read_ignore() - added code to compile regular expressions if
+       your system supports regex().
+
+*chkhistory_db.c - added code to handle INN-2.0's new database routines.
+
+* makephrases.c - count_vars() - rewrote so can't go past end of string
+       when checking for a variable.  Added <string.h>.
+
+* suck.c - do_one_group() - changed so abort on non 411,500 error codes
+	when sending the group command.
+
+23 Jul 98 - Suck-3.9.4 released
+
+-- Changes from Suck-3.9.2 -> Suck-3.9.3
+
+* suck.c - main() - added code to get reply from "quit" command, that
+	way if remote end is in process of sending us something, we
+	don't close down the buffer prematurely.
+
+23 Apr 98 - Suck-3.9.3 released
+
+-- Changes from Suck-3.9.1 -> Suck-3.9.2
+
+* As of this version, my e-mail address has changed from boby@pixi.com
+to bobyetman@worldnet.att.net.
+
+killprg.c - chk_msg_kill_fork() - added code to handle new -LF option,
+	to override built-in default for suck.killlog.
+
+killfile.c - get_chunk_mem() - changed so that if send_command() aborts
+	due to TimeOut, we return the actual error (RETVAL_ERROR) vice
+	UNEXPECTEDANS which would cause us to keep going.
+
+	regex_scan() - fixed bug if you had were using QUOTECHAR and had
+	regex() compiled in.  The regex code would strip the QUOTECHAR
+	off the string, so we'd always do case insensitive compare.
+
+	parse_a_file(), regex_scan(), regex_check(), regex_block(), do_debug() - 
+	modified to handle new non-regex searching mechanism.  Switched to
+	Boyer-Moore algorithm vice straight brute force of strstr() or nstrstr().
+	Should make searching of body of messages lots quicker.  Added ability
+	to designate string in a killfile as a non-regex.  This is done by adding
+	a % to the front of a string, before the QUOTE char.  Added NON_REGEX=
+	param to killfiles.  Allows you to specify a character instead of % to
+	represent non-regex strings.  Revamped the handling of the QUOTE character,
+	it's all done now in regex_scan().  Fixed bug in printing if we were
+	using extended regex or not.  Added debugging statements.  
+
+	chk_msg_kill() - added code to handle new -LF option, to override built-in
+	default for suck.killlog.
+
+suck.c - do_one_group() - added error message print if timed out getting
+	MsgIds.
+
+	do_connect(), send_command() - fixed to handle flushing of inbuf
+	and resetting which group number we are on, if reconnect option is 
+	given.
+
+	restart_yn() - added -O, skip_on_restart.   Useful when suck is
+	having trouble with a particular article, and it keeps timing out
+	when you restart.  This option tells suck to skip the first article
+	on restart.
+
+29 Mar 98 - Suck-3.9.2 released
+
+-- Changes from Suck-3.9.0 -> Suck-3.9.1
+
+both.c - get_long() - created, copy of number() except it gets
+	longs instead of ints.
+	str_long() - created copy of str_int() except it gets
+	longs instead of ints.  
+
+suck.h - changed so MsgNr is long vice int.  This necessitated a
+	bunch of changes in other routines, changing int vars
+	to long, and a couple of subroutine calls had to be changed.
+
+12 Feb 98 - Suck-3.9.1 released
+
 -- Changes from Suck-3.8.0 -> Suck-3.9.0
 
 Makefile.in - remove -ansi -pedantic, which caused Linux Glibc and
@@ -1177,8 +1345,3 @@ fixed numeric ip handling.
 --Changes to 1.2: 
 added a missing htons() thanks to laurent@brasil.frmug.fr.net
 added numeric ip address handling.
-
-
-	  
-
-

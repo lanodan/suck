@@ -19,8 +19,6 @@
 # endif
 #endif
 
-
-
 #ifdef HAVE_SYS_WAIT_H
 # include <sys/wait.h>
 #endif
@@ -28,7 +26,7 @@
 # define WEXITSTATUS(stat_val) ((unsigned)(stat_val) >>8)
 #endif
 #ifndef WIFEXITED
-# define WIFEXITED(stat_val) ((stat_val) & 255) == 0)
+# define WIFEXITED(stat_val) (((stat_val) & 255) == 0)
 #endif
 
 #ifdef HAVE_LIMITS_H
@@ -51,6 +49,16 @@
 #include <signal.h>
 #endif
 
+
+
+#ifdef PERL_EMBED
+#include <EXTERN.h>
+#include <perl.h>
+#ifndef ERRSV
+# define ERRSV (GvSV(errgv))  /* needed for perl 5.004 and earlier */
+# define PL_na (na)
+#endif
+#endif
 
 /* KILLPRG.C -------------------------------------------------------------*/
 /* this file contains all subroutines pertaining to forking a killfile    */
@@ -276,7 +284,7 @@ int chk_msg_kill_fork(PMaster master, PKillStruct pkill, char *header, int heade
 		MyPerror( killp_phrases[6]);
 	}
 	else { /* child died */
-		error_log(ERRLOG_REPORT,  killp_phrases[7]);
+		error_log(ERRLOG_REPORT,  killp_phrases[7], NULL);
 	} 		
 
 	switch (keepyn) {
@@ -288,7 +296,7 @@ int chk_msg_kill_fork(PMaster master, PKillStruct pkill, char *header, int heade
 		if(pkill->logyn != KILL_LOG_NONE) {
 			/* log it */
 			if(pkill->logfp == NULL) {
-				if((pkill->logfp = fopen(full_path(FP_GET, FP_TMPDIR, N_KILLLOG), "a")) == NULL) {
+				if((pkill->logfp = fopen(full_path(FP_GET, FP_TMPDIR, master->kill_log_name), "a")) == NULL) {
 					MyPerror(killp_phrases[12]);
 				}
 			}
@@ -343,5 +351,110 @@ RETSIGTYPE pipe_sighandler(int what) {
 	else {
 		error_log(ERRLOG_REPORT, killp_phrases[11], NULL);
 	}
+}
+#endif
+#ifdef PERL_EMBED
+/*---------------------------------------------------------------------*/
+/* MUCH OF THIS CODE COMES From the PERLEMBED man pages that comes */
+/* with perl */
+/*---------------------------------------------------------------------*/
+int killperl_setup(PKillStruct master, char *prg, int debug) {
+	int retval = TRUE;
+	char *ptr = NULL;
+
+	char *prgs[] = { ptr, ptr};
+
+	
+	if((master->perl_int = perl_alloc()) == NULL) {
+		retval = FALSE;
+		error_log(ERRLOG_REPORT, killp_phrases[14], NULL);
+	}
+	else {
+		if(debug == TRUE) {
+			do_debug("Perl program name = %s\n", prg);
+		}
+		
+                perl_construct(master->perl_int);
+                prgs[1] = prg;
+                if(perl_parse(master->perl_int, NULL, 2, prgs, NULL) == 0) {
+			perl_run(master->perl_int);
+			master->killfunc = chk_msg_kill_perl;
+		}
+		else {
+			error_log(ERRLOG_REPORT, killp_phrases[15], prg, NULL);
+			killperl_done(master);
+		}
+		
+	}
+        return retval;
+}
+/*--------------------------------------------------------------------------*/
+void killperl_done(PKillStruct master) {
+        perl_destruct(master->perl_int);
+        perl_free(master->perl_int);
+        master->perl_int = NULL;
+	master->killfunc=chk_msg_kill; /* restore default function */
+}
+/*----------------------------------------------------------------------------*/
+int chk_msg_kill_perl(PMaster master, PKillStruct killp, char *hdr, int hdrlen) {
+	/* return TRUE to kill article, FALSE to keep */
+	/* this code comes from the both perlembed and perlcall man pages */
+	int i, retval = FALSE;
+	char *args[2] = { NULL, NULL};
+
+	dSP; /* Perl stack pointer */
+
+	/* first set up args */
+	args[0] = hdr;
+	if(master->debug == TRUE) {
+		do_debug("Calling %s\n", PERL_PACKAGE_SUB);
+	}
+
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	
+	i = perl_call_argv(PERL_PACKAGE_SUB, G_SCALAR | G_EVAL | G_KEEPERR, args);
+	SPAGAIN;
+	
+	if(SvTRUE(ERRSV)) {
+                error_log(ERRLOG_REPORT, killp_phrases[16], SvPV(ERRSV,PL_na), NULL);
+		POPs;
+		killperl_done(killp);
+	}
+	else if(i != 1) {
+		error_log(ERRLOG_REPORT, killp_phrases[17], PERL_PACKAGE_SUB, NULL);
+		killperl_done(killp);
+	}
+	else {
+		/* 0 = keep 1 = delete */
+		i = POPi;
+		if(master->debug == TRUE) {
+			do_debug("retval = %d\n", i);
+		}
+		
+		retval = (i == 0) ? FALSE : TRUE;           
+	}
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+        if(retval == TRUE && killp->logyn != KILL_LOG_NONE) {
+		/* log it */
+		if(killp->logfp == NULL) {
+			if((killp->logfp = fopen(full_path(FP_GET, FP_TMPDIR, master->kill_log_name), "a")) == NULL) {
+				MyPerror(killp_phrases[19]);
+			}
+		}
+		if(killp->logfp != NULL) {
+                        /* first print our one line reason */
+			print_phrases(killp->logfp, killp_phrases[18], (master->curr)->msgnr, NULL);
+			if(killp->logyn == KILL_LOG_LONG) {
+				/* print the header as well */
+				print_phrases(killp->logfp, "%v1%", hdr, NULL);
+			}
+		}
+        }
+
+	return retval;
 }
 #endif

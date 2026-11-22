@@ -10,7 +10,7 @@ typedef struct LinkList {
 	char mandatory;
 	int  sentcmd;
 	int groupnr;
-	int nr;
+	long nr;
 } List, *PList;
 
 /* link list for group names */
@@ -52,6 +52,10 @@ typedef struct {
 	int no_dedupe;
 	int chk_msgid;
 	int prebatch;
+	int skip_on_restart;
+	int use_gui;
+	int do_xover;
+	int conn_dedupe;
 	unsigned short int portnr;
 	long rnews_size;
 	FILE *msgs;
@@ -65,24 +69,26 @@ typedef struct {
 	const char *errlog;
 	const char *localhost;
 	const char *activefile;
+	const char *kill_log_name;
 	PGroups groups;
+	int grpnr;
 	void *killp;
+	void *xoverp;
 } Master, *PMaster;
 
 int get_a_chunk(int, FILE *);
 void free_one_node(PList);
 int send_command(PMaster, const char *, char **, int);
 int get_message_index(PMaster);
-int do_one_group(PMaster, char *, char *, FILE *, int, int);
+int do_one_group(PMaster, char *, char *, FILE *, long, int);
 int do_supplemental(PMaster);
 const char *build_command(PMaster, const char *, PList);
+const char *null_str(const char *);
+const char *true_str(int);
+int allocnode(PMaster, char *, int, char *, long);
 
-enum { RETVAL_ERROR = -1, RETVAL_OK = 0, RETVAL_NOARTICLES, RETVAL_UNEXPECTEDANS, RETVAL_VERNR, RETVAL_NOAUTH };
+enum { RETVAL_ERROR = -1, RETVAL_OK = 0, RETVAL_NOARTICLES, RETVAL_UNEXPECTEDANS, RETVAL_VERNR, RETVAL_NOAUTH, RETVAL_EMPTYKILL };
 enum { BATCH_FALSE, BATCH_INNXMIT, BATCH_RNEWS, BATCH_LMOVE, BATCH_INNFEED, BATCH_LIHAVE };		/* poss values for batch variable */
 enum { MANDATORY_YES = 'M' , MANDATORY_OPTIONAL = 'O' };	/* do we have to download this article */
 
 #endif /* _SUCK_SUCK_H */
-
-
-
-

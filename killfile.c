@@ -42,27 +42,28 @@
 #define COMMA ','			/* group separator in newsgroup line in article */
 #define NEWSGROUP_HEADER "Newsgroups: "	/* header for line to match group files to */
 
-/* used for debugging print */
-#define TRUE_STR(x) (((x) == TRUE) ? "TRUE" : "FALSE")
-#define NULL_STR(x) (((x) == NULL) ? "NULL" : (x))
-
 /* local function prototypes */
 int get_chunk_mem(PMaster, unsigned long *len, int which, char **buf);
 int check_newsgroups(char *, const char *);
 void free_node(OneKill);
 int parse_a_file(const char *, const char *, POneKill, int, int, int);
-int pass_two(PKillStruct, int);
+int pass_two(PKillStruct, int, const char *fname);
 int check_a_group(PMaster, POneKill, char *, char **);
-void print_debug(PKillStruct);
+void print_debug(PKillStruct, const char *);
 void debug_one_kill(POneKill);
 void add_to_linkedlist(pmy_regex *, pmy_regex);
 const char *strnstr(const char *, const char *);
-pmy_regex regex_scan(char *, char, int, int);
-int regex_check(char *, pmy_regex, char, int);
-int regex_block(char *, pmy_regex, char, int);
+pmy_regex regex_scan(char *, char, int, int, char);
+int regex_check(char *, pmy_regex, int);
+
+void initialize_one_kill(POneKill);
 #ifdef HAVE_REGEX_H
 const char regex_chars[] = "*[]()^$\\?.";  /* characters which make it a regex */
 #endif
+
+void display_skiparray(unsigned char [SIZEOF_SKIPARRAY]);
+int find_string(int, pmy_regex, char *);
+
 /*-------------------------------------------------------------------------*/
 /* the enum must match the phrases in suckengl.c  killf_reasons[] */
 enum { REASON_NONE, REASON_TOOMANYLINES, REASON_NOTENUFLINES, REASON_NRGRPS, REASON_NOKEEP, REASON_TIE, REASON_HEADER,  \
@@ -89,22 +90,27 @@ const struct {
 	{21, "GROUP_OVERRIDE_MASTER", 0, ""},	/* string in masterfile to signify that group files override the master */
 	{17, "TIEBREAKER_DELETE", 0, ""},	/* what to do if match multi groups override default of keep */
 	{18, "USE_EXTENDED_REGEX", 0, ""}, /* do we use extended regular expressions */
+	{10, "NON_REGEX=", 0, ""},
+	{5,  "PERL=", 0, ""},
 };
 
 
 enum { PARAM_HILINE, PARAM_LOWLINE, PARAM_NRGRPS, PARAM_GROUP, PARAM_QUOTE, PARAM_PROGRAM,PARAM_HDRSCAN,
-	PARAM_BODY, PARAM_BODYBIG, PARAM_BODYSMALL, PARAM_GRPOVERRIDE, PARAM_TIEDELETE, PARAM_E_REGEX};
+	PARAM_BODY, PARAM_BODYBIG, PARAM_BODYSMALL, PARAM_GRPOVERRIDE, PARAM_TIEDELETE, PARAM_E_REGEX,
+	PARAM_NONREGEX, PARAM_PERL};
 #define NR_PARAMS ((int) (sizeof(Params)/sizeof(Params[0])))
 
-enum { DELKEEP_KEEP, DELKEEP_DELETE };
+
 /*--------------------------------------------------------------------------*/
-PKillStruct parse_killfile(int logfile_yn, int debug, int ignore_postfix) {
+PKillStruct parse_killfile(const char *filename, int logfile_yn, int debug, int ignore_postfix) {
 	FILE *fptr;
 	char buf[MAXLINLEN+1];
-	int i, doprg = FALSE, retval = TRUE;
-
-	static KillStruct Masterkill = { NULL, TRUE, FALSE, FALSE, 0, FALSE, NULL, chk_msg_kill, NULL, FALSE };	/* initialize everything first */
-
+	int i, doprg = FALSE, mastergrp = RETVAL_OK, retval = TRUE;
+#ifdef PERL_EMBED
+	int doperl = FALSE;
+#endif
+	KillStruct *Masterkill = NULL;
+	
 	/* kill file is going to get three passes, 1st one to count how many group files to process */
 	/* so can allocate memory for all the group stuff. */
 	/* also check for group override of masterkillfile */
@@ -112,73 +118,127 @@ PKillStruct parse_killfile(int logfile_yn, int debug, int ignore_postfix) {
 	/* 2nd pass will be to actually process the group files */
 	/* 3rd pass will be to process the master delete stuff */
 
-	Masterkill.logyn = logfile_yn;
-	/* which option to we use in call to full_path() ?  Do we use the postfix or not? */
-	Masterkill.ignore_postfix = ( ignore_postfix == TRUE) ? FP_GET_NOPOSTFIX : FP_GET ;
-	
-	/* FIRST PASS THRU MASTER KILLFILE - look for group delete/keeps and count em  and check for PROGRAM call*/
-	if((fptr = fopen(full_path(Masterkill.ignore_postfix, FP_DATADIR, N_KILLFILE), "r")) == NULL) {
-		/* this is not really an error, so don't report it as such */
+	/* first malloc our master structure */
+	if((Masterkill = malloc(sizeof(KillStruct))) == NULL) {
+		error_log(ERRLOG_REPORT, killf_phrases[1], NULL);
 		retval = FALSE;
 	}
 	else {
-		if(debug == TRUE) {
-			do_debug("Pass 1 & 2 kill file: %s\n", full_path(Masterkill.ignore_postfix, FP_DATADIR, N_KILLFILE));
-		}
-		while(fgets(buf, MAXLINLEN, fptr) != NULL && doprg == FALSE) {
-			if(debug ==  TRUE) {
-				/* so output looks better */
-				i = strlen(buf);
-				if(buf[i-1] == '\n') {
-					buf[i-1] = '\0';
-				}
-				do_debug("Read kill file line: %s\n", buf);
-			}
-			if(strncmp(buf, Params[PARAM_GROUP].name, (size_t) Params[PARAM_GROUP].len) == 0) {
-				Masterkill.totgrps++;	/* how many group files must we process */
-			}						
-			if(strncmp(buf, Params[PARAM_PROGRAM].name, (size_t) Params[PARAM_PROGRAM].len) == 0) {
-				doprg = killprg_forkit(&Masterkill, &buf[Params[PARAM_PROGRAM].len], debug);
-			}
-			if(strncmp(buf, Params[PARAM_GRPOVERRIDE].name, (size_t) Params[PARAM_GRPOVERRIDE].len) == 0) {
-				Masterkill.grp_override = TRUE;
-			}
-			if(strncmp(buf, Params[PARAM_TIEDELETE].name, (size_t) Params[PARAM_TIEDELETE].len) == 0) {
-				Masterkill.tie_delete = TRUE;
-			}
-			if(strncmp(buf, Params[PARAM_E_REGEX].name, (size_t) Params[PARAM_E_REGEX].len) == 0) {
-				Masterkill.use_extended_regex = TRUE;
-			}
-		}
-		(void) fclose(fptr);
+		/* now initialize everything */
+		Masterkill->logfp = NULL;
+		Masterkill->grp_override = FALSE;
+		Masterkill->tie_delete = FALSE;
+		Masterkill->totgrps = 0;
+		Masterkill->grps = NULL;
+		Masterkill->killfunc = chk_msg_kill;
+		Masterkill->pbody= NULL;
+		Masterkill->bodylen = 0;
+		Masterkill->use_extended_regex = FALSE;
+		Masterkill->xoverview = NULL; /* these last two are used in xoverview code */
+		
+		initialize_one_kill(&(Masterkill->master));
 
-		if(doprg == TRUE) {
-			Masterkill.totgrps = 0;
+#ifdef PERL_EMBED
+		Masterkill->perl_int = NULL;
+#endif
+		
+		Masterkill->logyn = logfile_yn;
+		/* which option to we use in call to full_path() ?  Do we use the postfix or not? */
+		Masterkill->ignore_postfix = ( ignore_postfix == TRUE) ? FP_GET_NOPOSTFIX : FP_GET ;
+
+		if(debug == TRUE) {
+			do_debug("Trying to read killfile: %s\n", full_path(Masterkill->ignore_postfix, FP_DATADIR, filename));
+		}
+		
+		/* FIRST PASS THRU MASTER KILLFILE - look for group delete/keeps and count em  and check for PROGRAM call*/
+		if((fptr = fopen(full_path(Masterkill->ignore_postfix, FP_DATADIR, filename), "r")) == NULL) {
+			/* this is not really an error, so don't report it as such */
+			retval = FALSE;
 		}
 		else {
-			/* SECOND PASS - call routine */
-			if(Masterkill.totgrps > 0) {
-				if(pass_two(&Masterkill, debug) == RETVAL_ERROR) {
+			if(debug == TRUE) {
+				do_debug("Pass 1 & 2 kill file: %s\n", full_path(Masterkill->ignore_postfix, FP_DATADIR, filename));
+			}
+			while(fgets(buf, MAXLINLEN, fptr) != NULL && doprg == FALSE) {
+				if(debug ==  TRUE) {
+				/* so output looks better */
+					i = strlen(buf);
+					if(buf[i-1] == '\n') {
+						buf[i-1] = '\0';
+					}
+					do_debug("Read kill file line: %s\n", buf);
+				}
+				if(strncmp(buf, Params[PARAM_GROUP].name, (size_t) Params[PARAM_GROUP].len) == 0) {
+					Masterkill->totgrps++;	/* how many group files must we process */
+				}						
+				if(strncmp(buf, Params[PARAM_PROGRAM].name, (size_t) Params[PARAM_PROGRAM].len) == 0) {
+#ifdef PERL_EMBED
+					if(Masterkill->perl_int == NULL) {
+#endif
+						doprg = killprg_forkit(Masterkill, &buf[Params[PARAM_PROGRAM].len], debug);
+#ifdef PERL_EMBED
+					}
+#endif
+				}
+				if(strncmp(buf, Params[PARAM_GRPOVERRIDE].name, (size_t) Params[PARAM_GRPOVERRIDE].len) == 0) {
+					Masterkill->grp_override = TRUE;
+				}
+				if(strncmp(buf, Params[PARAM_TIEDELETE].name, (size_t) Params[PARAM_TIEDELETE].len) == 0) {
+					Masterkill->tie_delete = TRUE;
+				}
+				if(strncmp(buf, Params[PARAM_E_REGEX].name, (size_t) Params[PARAM_E_REGEX].len) == 0) {
+					Masterkill->use_extended_regex = TRUE;
+				}
+#ifdef PERL_EMBED				
+				if(strncmp(buf, Params[PARAM_PERL].name, (size_t) Params[PARAM_PERL].len) == 0) {
+					if(doprg == FALSE) {
+						doperl = killperl_setup(Masterkill, &buf[Params[PARAM_PERL].len], debug);
+					}
+				}
+#endif	
+			}
+			(void) fclose(fptr);
+#ifndef PERL_EMBED
+			if(doprg == TRUE) {
+#else
+			if(doprg == TRUE || Masterkill->perl_int != NULL) {
+#endif		
+				Masterkill->totgrps = 0;
+			}
+			else {
+				/* SECOND PASS - call routine */
+				if(Masterkill->totgrps > 0) {
+					if(pass_two(Masterkill, debug, filename) == RETVAL_ERROR) {
+						retval = FALSE;
+					}
+				}
+				/* THIRD PASS - process master delete stuff */
+				if(retval != FALSE && (mastergrp = parse_a_file(filename, "Master", &(Masterkill->master), debug, Masterkill->ignore_postfix, Masterkill->use_extended_regex)) == RETVAL_ERROR) {
 					retval = FALSE;
 				}
 			}
-			/* THIRD PASS - process master delete stuff */
-			if(retval != FALSE && parse_a_file(N_KILLFILE, "Master", &(Masterkill.master), debug, Masterkill.ignore_postfix, Masterkill.use_extended_regex) != RETVAL_OK) {
-				retval = FALSE;
+		}
+		
+		/* do we have an error OR do we have empty killfiles */
+		if((retval == FALSE) || (mastergrp == RETVAL_EMPTYKILL && Masterkill->totgrps == 0 && doprg == FALSE)) {
+#ifdef PERL_EMBED
+			if(Masterkill->perl_int == NULL) {
+#endif
+				free_killfile(Masterkill);	/* just in case any memory got allocated */
+				Masterkill = NULL;
+#ifdef PERL_EMBED
 			}
+#endif
+		}
+		else if(debug == TRUE) {
+			print_debug(Masterkill, filename);
 		}
 	}
-
-	if(retval == FALSE) {
-		free_killfile(&Masterkill);	/* just in case any memory got allocated */
-	}
-	else if(debug == TRUE) {
-		print_debug(&Masterkill);
-	}
-	return (retval == FALSE) ? NULL :  &Masterkill;
+	
+	return Masterkill;
 }
 /*-------------------------------------------------------------------------------------------*/
-int pass_two(PKillStruct killp, int debug ) {
+int pass_two(PKillStruct killp, int debug, const char *filename ) {
 
 	int retval = RETVAL_OK;
 	FILE *fptr;
@@ -195,8 +255,8 @@ int pass_two(PKillStruct killp, int debug ) {
 		retval = RETVAL_ERROR;
 		error_log(ERRLOG_REPORT, killf_phrases[1], NULL);
 	}
-	else if((fptr = fopen(full_path(killp->ignore_postfix, FP_DATADIR, N_KILLFILE), "r")) == NULL) {
-		MyPerror(full_path(killp->ignore_postfix, FP_DATADIR, N_KILLFILE));
+	else if((fptr = fopen(full_path(killp->ignore_postfix, FP_DATADIR, filename), "r")) == NULL) {
+		MyPerror(full_path(killp->ignore_postfix, FP_DATADIR, filename));
 		retval = RETVAL_ERROR;
 	}
 	else {
@@ -250,7 +310,7 @@ int pass_two(PKillStruct killp, int debug ) {
 					else {
 						strcpy(killp->grps[grpon].group, grpname);
 						/* get, ignoring postfix, so use absolute filename on group line */
-						if(parse_a_file(grpfile, grpname, &(killp->grps[grpon].match), debug,FP_GET_NOPOSTFIX,killp->use_extended_regex) == RETVAL_ERROR) {
+						if(parse_a_file(grpfile, grpname, &(killp->grps[grpon].match), debug,FP_GET_NOPOSTFIX,killp->use_extended_regex) != RETVAL_OK) {
 							/* whoops couldn't open file, ignore */
 							free(killp->grps[grpon].group);
 							grpon--;  /* so that we reuse this grp entry */
@@ -271,12 +331,18 @@ int pass_two(PKillStruct killp, int debug ) {
 void free_killfile(PKillStruct master) {
 
 	int i;
-
+	POverview tmp, tmp2;
+	
 	if(master != NULL) {
 		/* first kill off killprg if its there */
 		if(master->killfunc==chk_msg_kill_fork) {
 			killprg_closeit(master);
 		}
+#ifdef PERL_EMBED
+		if(master->perl_int == NULL) {
+			killperl_done(master);
+		}
+#endif
 		/* close off log, if opened */
 		if(master->logfp != NULL) {
 			fclose(master->logfp);
@@ -289,44 +355,55 @@ void free_killfile(PKillStruct master) {
 			}
 			free(master->grps);
 		}
+		tmp = master->xoverview;
+		while (tmp != NULL) {
+			tmp2 = tmp->next;
+			if(tmp->header != NULL) {
+				free(tmp->header);
+			}
+			free(tmp);
+			tmp = tmp2;
+		}
+		free(master);
 	}
 }
 /*--------------------------------------------------------------------*/
 void free_node(OneKill node) {
 
 	pmy_regex curr, next;
+	
+		curr = node.list;
 
-	curr = node.list;
-
-	if (node.header != NULL) {
+		if (node.header != NULL) {
 #ifdef HAVE_REGEX_H
-		if(node.header->ptrs != NULL) {
-			regfree(node.header->ptrs);
-		}
+			if(node.header->ptrs != NULL) {
+				regfree(node.header->ptrs);
+			}
 #endif
-		if(node.header->header != NULL) {
-			free(node.header->header);
+			if(node.header->header != NULL) {
+				free(node.header->header);
+			}
+			if(node.header->string != NULL) {
+				free(node.header->string);
+			}
 		}
-		if(node.header->string != NULL) {
-			free(node.header->string);
-		}
-	}
-	while(curr != NULL) {
+		while(curr != NULL) {
 #ifdef HAVE_REGEX_H
-		if(curr->ptrs != NULL) {
-			regfree(curr->ptrs);
-		}
+			if(curr->ptrs != NULL) {
+				regfree(curr->ptrs);
+			}
 #endif
-		if(curr->header != NULL) {
-			free(curr->header);
+			if(curr->header != NULL) {
+				free(curr->header);
+			}
+			if(curr->string != NULL) {
+				free(curr->string);
+			}
+			next = curr->next;
+			free(curr);
+			curr = next;
 		}
-		if(curr->string != NULL) {
-			free(curr->string);
-		}
-		next = curr->next;
-		free(curr);
-		curr = next;
-	}
+	
 }
 /*--------------------------------------------------------------------------*/
 int get_one_article_kill(PMaster master, int logcount) {
@@ -476,10 +553,9 @@ int get_chunk_mem(PMaster master, unsigned long *size, int which, char **retbuf)
 			cmd = build_command(master, "body", master->curr);
 			i = 222;
 		}	
-		if(send_command(master, cmd, NULL, i) != RETVAL_OK) {
+		if((retval = send_command(master, cmd, NULL, i)) != RETVAL_OK) {
 			free(buf);
 			buf = NULL;
-			retval = RETVAL_UNEXPECTEDANS;
 		}
 	}
 	while(buf != NULL && done == FALSE) {
@@ -628,7 +704,7 @@ int chk_msg_kill(PMaster master, PKillStruct killp, char *headerbuf, int buflen)
 		/* log it */
 		/* only open this sucker once */
 		if(killp->logfp == NULL) {
-			if((killp->logfp = fopen(full_path(FP_GET, FP_TMPDIR, N_KILLLOG), "a")) == NULL) {
+			if((killp->logfp = fopen(full_path(FP_GET, FP_TMPDIR, master->kill_log_name), "a")) == NULL) {
 				MyPerror(killf_phrases[3]);
 			}
 		}
@@ -703,7 +779,7 @@ int check_a_group(PMaster master, POneKill killp, char *headerbuf, char **why) {
 	curr = killp->list;
 	
 	while(match == FALSE && curr != NULL) {
-		if(regex_check(headerbuf, curr, killp->quote, master->debug) == TRUE) {
+		if(regex_check(headerbuf, curr, master->debug) == TRUE) {
 			match = TRUE;
 			sprintf(reason, "%s %s %s ", killf_reasons[REASON_HEADER], curr->header, curr->string);
 			*why = reason;
@@ -713,7 +789,7 @@ int check_a_group(PMaster master, POneKill killp, char *headerbuf, char **why) {
 	curr = killp->header;
 	while(match == FALSE && curr != NULL) {
 		/* scan the entire header */
-		if(regex_block(headerbuf, curr, killp->quote, master->debug) == TRUE) {
+		if(regex_block(headerbuf, curr, master->debug) == TRUE) {
 			match  = TRUE;
 			sprintf(reason,"%s %s", killf_reasons[REASON_HEADER], curr->string);
 			*why = reason;
@@ -741,7 +817,7 @@ int check_a_group(PMaster master, POneKill killp, char *headerbuf, char **why) {
 		else {
 			curr = killp->body;
 			while(match == FALSE && curr != NULL) {  /* scan the body */
-				if(regex_block(temp->pbody, curr, killp->quote, master->debug) == TRUE) {
+				if(regex_block(temp->pbody, curr, master->debug) == TRUE) {
 					match = TRUE;
 					sprintf(reason, "%s %s", killf_reasons[REASON_BODY], curr->string);
 					*why = reason;
@@ -795,6 +871,20 @@ int check_newsgroups(char *header, const char *whichgroup) {
 	return match;
 }
 /*-------------------------------------------------------------------------------*/
+void initialize_one_kill(POneKill mykill) {
+	/* initialize the various elements*/	
+	mykill->list = NULL;
+	mykill->header = NULL;
+	mykill->body = NULL;
+	mykill->hilines = mykill->lowlines = mykill->maxgrps = 0;
+	mykill->bodybig = mykill->bodysmall = 0;
+	mykill->quote = KILLFILE_QUOTE;
+	mykill->non_regex = KILLFILE_NONREGEX;
+
+	return;
+}
+
+/*-------------------------------------------------------------------------------*/
 int parse_a_file(const char *fname, const char *group, POneKill mykill, int debug, int ignore_prefix, int use_e_regex) {
 
 	FILE *fptr;
@@ -803,13 +893,11 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill, int debu
 	int retval = RETVAL_OK;
 	pmy_regex curr;
 
-	mykill->list = NULL;
-	mykill->header = NULL;
-
-	/* first initialized the killstruct */
-	mykill->hilines = mykill->lowlines = mykill->maxgrps = 0;
-	mykill->quote = KILLFILE_QUOTE;
-
+	/* first initialize the killstruct */
+	initialize_one_kill(mykill);
+#ifdef HAVE_REGEX_H
+	mykill->use_extended = use_e_regex;
+#endif
 	/* now read in the killfile and parse it */
 	if((fptr = fopen(full_path(ignore_prefix, FP_DATADIR, fname), "r")) == NULL) {
 		MyPerror(full_path(ignore_prefix, FP_DATADIR, fname));
@@ -818,6 +906,8 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill, int debu
 	else {
 		if(debug == TRUE) {
 			do_debug("Pass 3 kill file: %s\n", full_path(ignore_prefix, FP_DATADIR, fname));
+			do_debug("Pass 3 options: group=%s, use_extended_regex=%s, ignore_prefix=%s\n",
+				 group, true_str(use_e_regex), true_str(ignore_prefix));	 
 		}
 		while(fgets(buf, MAXLINLEN, fptr) != NULL) {
 			buf[MAXLINLEN] = '\0';	/* just in case */
@@ -854,12 +944,20 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill, int debu
 								mykill->quote = buf[Params[PARAM_QUOTE].len];
 							}
 							break;
+						case PARAM_NONREGEX:
+							if(buf[Params[PARAM_NONREGEX].len] == '\0') {
+								error_log(ERRLOG_REPORT, "%s\n", killf_phrases[12], NULL);
+							}
+							else {
+								mykill->non_regex = buf[Params[PARAM_NONREGEX].len];
+							}
+							break;
 						case PARAM_HDRSCAN:
 							if(buf[Params[PARAM_HDRSCAN].len] == '\0') {
 								error_log(ERRLOG_REPORT, "%s\n", killf_phrases[7], NULL);
 							}
 							else {
-								if((curr = regex_scan(buf, mykill->quote, debug, use_e_regex)) != NULL) {
+								if((curr = regex_scan(buf, mykill->quote, debug, use_e_regex, mykill->non_regex)) != NULL) {
 									add_to_linkedlist(&(mykill->header), curr);
 								}
 							}
@@ -869,7 +967,7 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill, int debu
 								error_log(ERRLOG_REPORT, "%s\n", killf_phrases[10], NULL);
 							}
 							else {
-								if((curr = regex_scan(buf, mykill->quote, debug, use_e_regex)) != NULL) {
+								if((curr = regex_scan(buf, mykill->quote, debug, use_e_regex, mykill->non_regex)) != NULL) {
 									add_to_linkedlist(&(mykill->body), curr);
 								}
 							}
@@ -885,8 +983,8 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill, int debu
 							use_e_regex = TRUE;
 #ifdef HAVE_REGEX_H
 							mykill->use_extended = TRUE; /*  save for printing in debug */
-							break;
 #endif
+							break;
 						default:		/* handle all other lines aka do nothing*/
 							break;
 					  
@@ -895,13 +993,17 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill, int debu
 				}
 				if(match == FALSE) {
 				/* it's a different line in the header add to linked-list */
-					if((curr = regex_scan(buf, mykill->quote, debug, use_e_regex)) != NULL) {
+					if((curr = regex_scan(buf, mykill->quote, debug, use_e_regex, mykill->non_regex)) != NULL) {
 						add_to_linkedlist(&(mykill->list), curr);
 					}
 				}
 			} /* comment line stuff */
 		}
 		(void) fclose(fptr);
+		/* check for an empty killfile */
+		if(mykill->hilines == 0 && mykill->lowlines == 0 && mykill->maxgrps == 0 && mykill->bodybig == 0 && mykill->bodysmall == 0 && mykill->header == NULL && mykill->list == NULL && mykill->body == NULL) {
+			retval = RETVAL_EMPTYKILL;
+		}
 	}
 	return retval;
 }
@@ -922,52 +1024,16 @@ void add_to_linkedlist(pmy_regex *head_ptr, pmy_regex addon) {
 		curr->next = addon;
 	}
 }
-/*---------------------------------------------------------------------------------------------*/
-const char *strnstr(const char *linein, const char *matchstr) {
-
-	/* see if matchstr exists in inline, case insensitive */
-	/* return start of string in inline, else return NULL */
-
-	const char *tptr, *startchar, *retstr = NULL;
-	
-	if(linein != NULL && matchstr != NULL) {
-		while(*linein != '\0' && retstr == NULL) {
-			/* first see if I can find the first char */
-			while(*linein != '\0' && tolower(*linein) != tolower(*matchstr)) {
-				linein++;
-			}
-			if(*linein != '\0') {
-				/* bingo */
-				startchar = linein;
-				/* now try to match rest of string */
-				tptr = matchstr;
-				while(tolower(*startchar) == tolower(*tptr) && *tptr != '\0') {
-					startchar++;
-					tptr++;
-				}
-				if(*tptr == '\0') {
-					/* bingo, we have a match */
-					retstr =  linein;
-				}
-				else {
-					/* no match */
-					linein++;
-				}
-			}		
-		}
-	}
-	return retstr;
-}
 /*----------------------------------------------------------------------------------*/
 /* scan a line and build the compiled regex pointers to call regexex() with */
 /* ---------------------------------------------------------------------------------*/
-pmy_regex regex_scan(char *linein, char quotechar, int debug, int use_e_regex) {
+pmy_regex regex_scan(char *linein, char quotechar, int debug, int use_e_regex, char non_regex) {
 
-	char *tptr, *startline, *startstr;
-	int len;
+	char *tptr, *startline;
+	int len,x,y, case_sens = FALSE, flags = FALSE;
 #ifdef HAVE_REGEX_H
 	char errmsg[256];
-	int i,j, flags, useregex = FALSE;
+	int i,j, useregex = TRUE;
 #endif
 
 	pmy_regex which = NULL;
@@ -980,18 +1046,40 @@ pmy_regex regex_scan(char *linein, char quotechar, int debug, int use_e_regex) {
 			tptr++;
 		}
 		startline = tptr+1;
-		startstr = startline;  /* used for saving string */
 		len = startline - linein;
+
+		/* do we treat this string as a non-regex?? */
+		if(*startline == non_regex) {
+			startline++;
 #ifdef HAVE_REGEX_H
-		flags = REG_NOSUB;
+			useregex = FALSE;
+#endif		
+		}
+		/* case sensitive search?? */
 		if(*startline == quotechar) {
 			startline++;
-			flags |= REG_ICASE;
+			case_sens = TRUE;
 		}
-		if(use_e_regex == TRUE) {
-			flags |= REG_EXTENDED;
+#ifdef HAVE_REGEX_H
+		if(useregex == TRUE) {
+			flags = REG_NOSUB;
+			if(case_sens == FALSE) {
+				flags |= REG_ICASE;
+			}
+			if(use_e_regex == TRUE) {
+				flags |= REG_EXTENDED;
+			}
+			useregex  = FALSE;
+			/* test to see whether or not we need to use regex */
+			for(i = 0; i < strlen(regex_chars) && useregex != TRUE; i++) {
+				for(j = 0 ; j < strlen(startline)&& useregex != TRUE; j++) {
+					if(startline[j] == regex_chars[i]) {
+						useregex = TRUE;
+					}
+				}
+			}
 		}
-		
+	
 #endif
 		/* now count each of em, so that can alloc my array of regex_t */
 		if(*tptr != '\0') {
@@ -1002,13 +1090,14 @@ pmy_regex regex_scan(char *linein, char quotechar, int debug, int use_e_regex) {
 			}
 			else {
 				/* first save the string for later printing, if necessary */
-				if((which->string = malloc(strlen(startstr)+1)) == NULL) {
+				if((which->string = malloc(strlen(startline)+1)) == NULL) {
 					err = TRUE;
 					error_log(ERRLOG_REPORT, killf_phrases[5], NULL);
 				}
 				else {					
-					strcpy(which->string,startstr);
-					which->next = NULL;	/* initialize */	
+					strcpy(which->string,startline);
+					which->next = NULL;	/* initialize */
+					which->case_sensitive = case_sens;
 #ifdef HAVE_REGEX_H
 					which->ptrs = NULL;	/* just to be on safe side */
 #endif
@@ -1019,15 +1108,7 @@ pmy_regex regex_scan(char *linein, char quotechar, int debug, int use_e_regex) {
 					else {
 						strncpy(which->header, linein, len);
 						which->header[len] = '\0';	/* just in case */
-						/* test to see whether or not we need to use regex */
-#ifdef HAVE_REGEX_H
-						for(i=0;i<sizeof(regex_chars)&& useregex != TRUE ;i++) {
-							for(j = 0 ; j < strlen(which->string)&& useregex != TRUE; j++) {
-								if(which->string[j] == regex_chars[i]) {
-									useregex = TRUE;
-								}
-							}
-						}
+#ifdef HAVE_REGEX_H						
 						if(useregex == TRUE) {
 							if((which->ptrs = malloc(sizeof(regex_t))) == NULL) {
 								error_log(ERRLOG_REPORT, killf_phrases[5], NULL);
@@ -1043,6 +1124,36 @@ pmy_regex regex_scan(char *linein, char quotechar, int debug, int use_e_regex) {
 									err= TRUE;
 								}
 							}
+						}
+						else {
+#endif
+							/* not using regex, fill in skiparray */
+							/* first fill in max skip for all chars (len of string) */
+							/* See Algorithms/Sedgewick pg 287-289 for explanation */
+							y=strlen(which->string);
+	
+							for(x=0;x<sizeof(which->skiparray);x++) {
+								which->skiparray[x] = y;
+							}
+							/* now go back and fill in those in our search string */
+							if(case_sens == FALSE) {
+								/* case-insensitive search */
+								for(x=0;x<y;x++) {
+									/* have to match both upper and lower case */
+									char xx;
+									xx = which->string[x];
+									which->skiparray[(unsigned char) toupper(xx)] = (y-1)-x;
+									which->skiparray[(unsigned char) tolower(xx)] = (y-1)-x;
+								}
+							}
+							else {
+								for(x=1;x<y;x++) {
+									which->skiparray[(unsigned char) which->string[x]] = (y-1)-x;
+								}
+							}
+							
+							
+#ifdef HAVE_REGEX_H
 						}
 #endif
 					}
@@ -1073,9 +1184,9 @@ pmy_regex regex_scan(char *linein, char quotechar, int debug, int use_e_regex) {
 	return which;
 }
 /*------------------------------------------------------------------------------------*/
-int regex_check(char *headerbuf, pmy_regex expr, char quotechar, int debug) {
+int regex_check(char *headerbuf, pmy_regex expr, int debug) {
 	int match = FALSE;
-	char *startline, *endline, *ptr;
+	char *startline, *endline;
 	
 	if(expr->header != NULL) {
 		if((startline = strstr(headerbuf, expr->header)) != NULL) {
@@ -1100,17 +1211,7 @@ int regex_check(char *headerbuf, pmy_regex expr, char quotechar, int debug) {
 			}
 			else {
 #endif
-				/* use strstr() or strnstr() */
-				ptr = expr->string;
-				if(*ptr == quotechar) {
-					ptr++;
-					if(strstr(startline, ptr) != NULL) {
-						match = TRUE;
-					}
-				}
-				else if(strnstr(startline, ptr) != NULL) {
-					match = TRUE;
-				}
+				match = find_string(debug, expr, startline+strlen(expr->header)+1);
 #ifdef HAVE_REGEX_H		
 			}
 #endif
@@ -1127,54 +1228,104 @@ int regex_check(char *headerbuf, pmy_regex expr, char quotechar, int debug) {
 	return match;
 }
 /*------------------------------------------------------------------------------------*/
-int regex_block(char *what, pmy_regex where, char quote, int debug) {
+int regex_block(char *what, pmy_regex where, int debug) {
 
 	/* find a string in a block */
 	int match = FALSE;
-	char *tptr;
 	
 	if(debug == TRUE && where->string != NULL) {
 		do_debug("Checking for -%s-\n", where->string);
 	}
 #ifdef HAVE_REGEX_H
 	if(where->ptrs != NULL) {
-
-		
 		if(regexec(where->ptrs, what, 0, NULL, 0) == 0) {
 			match = TRUE;
 		}
 	}
 	else {
 #endif
-		tptr = where->string;
-		if(*tptr == quote) {
-			tptr++;
-			if(strstr(what,tptr) != NULL) {
-				match = TRUE;
-			}
-		}
-		else if(strnstr(what, tptr) != NULL) {
-			match = TRUE;
-		}
+		match = find_string(debug, where, what);
 #ifdef HAVE_REGEX_H
 	}
 #endif
 	return match;	
 }
+/*---------------------------------------------------------------------------------------------*/
+int find_string(int debug, pmy_regex expr, char *str) {
 
+	/* the search mechanism is based on the Boyer-Moor Algorithms (pg 286- of Algorithms book) */
+	int match = FALSE;	
+	char *ptr;		/* pointer to pattern */
+	int lenp;		/* length of pattern */
+	int lens;		/* length of string we are searching  */
+	int i;			/* current location in string */
+	int j;			/* current location in pattern */
+	int t;			/* value of skip array for string location */
+
+	ptr = expr->string;
+	lenp = strlen(ptr);
+	lens = strlen(str);
+	
+
+	if(expr->case_sensitive == TRUE ) {
+		/* do case-sensitive search */
+		if(debug == TRUE) {
+			do_debug("Case-sensitive search for %s\n", ptr);
+		}
+		i = j = lenp-1;
+		do {
+			if(str[i] == ptr[j]) {
+				i--; 
+				j--;
+			}
+			else {
+				t = expr->skiparray[(unsigned char) str[i]];
+				i += ( lenp -j > t) ? (lenp - j) : t;
+				j = lenp - 1;
+			}
+		} while( j >= 0 && i < lens);
+		if(j < 0) {
+			match = TRUE;
+		}
+
+	}
+	else {
+		/* do case-insensitive search */
+		if(debug == TRUE ) {
+			do_debug("Case-insensitive search for --%s--\n", ptr);
+		}
+		i = j = lenp-1;
+		do {
+			if(tolower(str[i]) == tolower(ptr[j])) {
+				i--; 
+				j--;
+			}
+			else {
+				t = expr->skiparray[(unsigned char) str[i]];
+				i += ( lenp -j > t) ? (lenp - j) : t;
+				j = lenp - 1;
+			}
+		} while( j >= 0 && i < lens);
+		if(j < 0) {
+			match = TRUE;
+		}
+	}
+	return match;
+	
+}
 /*------------------------------------------------------------------------------------*/
-void print_debug(PKillStruct master) {
+void print_debug(PKillStruct master, const char *fname) {
 	int i;
 	
 	/* print out status of master killstruct to debug file */
-	do_debug("Master KillStruct:\n");
-	do_debug("logyn=%s\n",TRUE_STR(master->logyn));
-	do_debug("grp_override=%s\n",TRUE_STR(master->grp_override));
- 	do_debug("tie_delete=%s\n",TRUE_STR(master->tie_delete));
+	do_debug("--%s-- Master KillStruct\n",fname);
+	do_debug("logyn=%s\n",true_str(master->logyn));
+	do_debug("grp_override=%s\n",true_str(master->grp_override));
+ 	do_debug("tie_delete=%s\n",true_str(master->tie_delete));
 	do_debug("totgrps=%d\n", master->totgrps);
-	do_debug("ignore_postfix=%s\n",TRUE_STR(master->ignore_postfix));
-	do_debug("use_extended_regex=%s\n", TRUE_STR(master->use_extended_regex));
-
+	do_debug("ignore_postfix=%s\n",true_str(master->ignore_postfix));
+	do_debug("use_extended_regex=%s\n", true_str(master->use_extended_regex));
+	
 	do_debug("Master kill group");
 	debug_one_kill(&(master->master));
 	
@@ -1184,27 +1335,28 @@ void print_debug(PKillStruct master) {
 		debug_one_kill(&(master->grps[i].match));
 	
 	}
-	do_debug("End of Killstruct debug\n");
+	do_debug("--%s-- End of Killstruct\n", fname);
 }
 /*------------------------------------------------------------------------*/
 void debug_one_kill(POneKill ptr) {	
 	pmy_regex temp;
-
 	
 	do_debug("--hilines =%d\n", ptr->hilines);
 	do_debug("--lowlines=%d\n", ptr->lowlines);
 	do_debug("--maxgrps=%d\n", ptr->maxgrps);
 	do_debug("--bodysize>%lu\n", ptr->bodybig);
 	do_debug("--bodysize<%lu\n", ptr->bodysmall);
-	do_debug("--quote=%d\n", ptr->quote);
+	do_debug("--quote=%c\n", ptr->quote);
+	do_debug("--non_regex=%c\n", ptr->non_regex);
 #ifdef HAVE_REGEX_H
-	do_debug("--use_extended_regex=%s\n", TRUE_STR(ptr->use_extended));
+	do_debug("--use_extended_regex=%s\n", true_str(ptr->use_extended));
 #endif
 	temp= ptr->header;
 	while(temp != NULL) {
 #ifdef HAVE_REGEX_H
 		do_debug("--header scan is %sregex\n", (temp->ptrs == NULL) ? "non-" : "");
 #endif
+		do_debug("--Scan is %scase-sensitive\n", (temp->case_sensitive == TRUE) ? "" : "non-");
 		if(temp->string != NULL) {
 			do_debug("--header scan=%s\n", temp->string);
 		}
@@ -1215,6 +1367,7 @@ void debug_one_kill(POneKill ptr) {
 #ifdef HAVE_REGEX_H
 		do_debug("--body scan is %sregex\n", (temp->ptrs == NULL) ? "non-" : "");
 #endif
+		do_debug("--Scan is %scase-sensitive\n", (temp->case_sensitive == TRUE) ? "" : "non-");
 		if(temp->string != NULL) {
 			do_debug("--body  scan=%s\n", temp->string);
 		}
@@ -1225,8 +1378,10 @@ void debug_one_kill(POneKill ptr) {
 #ifdef HAVE_REGEX_H
 		do_debug("--header match is %sregex\n", (temp->ptrs == NULL) ? "non-" : "");
 #endif
+		do_debug("--Scan is %scase-sensitive\n", (temp->case_sensitive == TRUE) ? "" : "non-");
 		do_debug("--header match= %s %s\n", temp->header, temp->string);
 		temp = temp->next;
 	}
 	do_debug("--end of Killfile Group--\n");
 }
+

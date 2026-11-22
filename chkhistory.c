@@ -67,7 +67,7 @@ void chkhistory(PMaster master) {
 		/* pass two */
 		/* first malloc the array */
 		if ((lets = (PList *) calloc(master->nritems, sizeof(PList))) == NULL) {
-			error_log(ERRLOG_REPORT, chkh_phrases[5], NULL);
+			error_log(ERRLOG_REPORT, chkh_phrases[4], NULL);
 		}
 		else {
 			/* now put them in place */
@@ -81,25 +81,33 @@ void chkhistory(PMaster master) {
 			}
 			/* pass three */
 			/* now we can read history file and check against first letter only */
+			/* history file can have two valid types of lines */
+			/* the ones we are interested in is the ones that start with < */
+			/* we ignore the ones that start with [  and report the rest */
 			while(fgets(linein, MAXLINLEN, fhist) != NULL) {
-				j = (linein[1]) % NR_LETTERS;
-				if((ptr = strchr(linein, '>'))  == NULL) {
-					error_log(ERRLOG_REPORT, chkh_phrases[3], linein, NULL);
-				}
-				else {
-					*(ptr+1) = '\0';
-					/* now that we've isolated the article nr, search our list */
-					found = FALSE;
-					for(i=0;i<letters[j].nr && found == FALSE;i++) {
-						x = letters[j].start+i;
-						if(lets[x] != NULL && cmp_msgid(linein, lets[x]->msgnr)==TRUE) {
-							nrfound++;
-							found = TRUE;
-							/* now flag it for deletion */
-							lets[x]->msgnr[0] = '\0';	/* no more article nr */
-							lets[x] = NULL;			/* so don't check it again */
+				if(linein[0] == '<') {
+					j = (linein[1]) % NR_LETTERS;
+					if((ptr = strchr(linein, '>'))  == NULL) {
+						error_log(ERRLOG_REPORT, chkh_phrases[2], linein, NULL);
+					}
+					else {
+						*(ptr+1) = '\0';
+						/* now that we've isolated the article nr, search our list */
+						found = FALSE;
+						for(i=0;i<letters[j].nr && found == FALSE;i++) {
+							x = letters[j].start+i;
+							if(lets[x] != NULL && cmp_msgid(linein, lets[x]->msgnr)==TRUE) {
+								nrfound++;
+								found = TRUE;
+								/* now flag it for deletion */
+								lets[x]->msgnr[0] = '\0';	/* no more article nr */
+								lets[x] = NULL;			/* so don't check it again */
+							}
 						}
 					}
+				}
+				else if(linein[0] != '[') {
+					error_log(ERRLOG_REPORT, chkh_phrases[2], linein, NULL);
 				}
 			}
 			/* pass four */
@@ -131,6 +139,6 @@ void chkhistory(PMaster master) {
 		}
 		TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
 		fclose(fhist);
-		print_phrases(master->msgs, chkh_phrases[4], str_int(nrfound), NULL);
+		print_phrases(master->msgs, chkh_phrases[3], str_int(nrfound), NULL);
 	}
 }

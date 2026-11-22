@@ -1,4 +1,4 @@
-.\" $Revision: 1.5 $
+.\" $Revision: 3.10.1 $
 .TH RPOST 1
 .SH NAME
 rpost - post an article to an NNTP news server
@@ -60,6 +60,10 @@ timeout
 .BI \-u
 ]
 [
+.BI -F
+perl_file
+]
+[
 .BI -f
 filter $$o=<outfile> filter_arg1 ...
 ]
@@ -72,14 +76,14 @@ variable
 .BI NNTPSERVER.
 .SH Generic Options
 
-.BI \-s | \-S
-filename
+.BI \@filename 
 
-These options will send all status messages (normally displayed on stdout), to
-an alternate file.  The lower case version, -s, will send the status messages
-to the compiled-in default defined in suck_config.h.  The default is /dev/null,
-so no status messages will be displayed.  The upper case version, -S, requires
-the filename parameter.  All status messages will then be sent to this file.
+This option tells rpost to read other options from a file in addition to the
+command line.
+
+.BI \-D 
+This option tells rpost to log various debugging messages to "debug.suck",
+primarily for use by the developer.
 
 .BI \-e | \-E
 filename
@@ -90,13 +94,13 @@ to the compiled-in default defined in suck_config.h.  The default is suck.errlog
 The upper case version, -E, requires the filename parameter.  All error messages
 will then be sent to this file.
 
-.BI \-U
-userid
-.BI \-P
-password
+.BI \-l
+phrase_file
 
-These two options let you specify a userid and password, if your NNTP server
-requires them.
+This option tells rpost to load in an alternate phrase file, instead of using
+the built-in messages.  This allows you to have rpost print phrases in another
+language, or to allow you to customize the messages without re-building.
+See the "FOREIGN LANGUAGE PHRASES" in suck.1 for more details.
 
 .BI \-M
 
@@ -110,22 +114,14 @@ port_number
 This option tells rpost to use an alternate NNRP port number when connecting
 to the host, instead of the default port number, 119.
 
-.BI \@filename 
+.BI \-s | \-S
+filename
 
-This option tells rpost to read other options from a file in addition to the
-command line.
-
-.BI \-l
-phrase_file
-
-This option tells rpost to load in an alternate phrase file, instead of using
-the built-in messages.  This allows you to have rpost print phrases in another
-language, or to allow you to customize the messages without re-building.
-See the "FOREIGN LANGUAGE PHRASES" in suck.1 for more details.
-
-.BI \-D 
-This option tells rpost to log various debugging messages to "debug.suck",
-primarily for use by the developer.
+These options will send all status messages (normally displayed on stdout), to
+an alternate file.  The lower case version, -s, will send the status messages
+to the compiled-in default defined in suck_config.h.  The default is /dev/null,
+so no status messages will be displayed.  The upper case version, -S, requires
+the filename parameter.  All status messages will then be sent to this file.
 
 .BI \-T
 This option overrides the compiled-in TIMEOUT value. This is how long rpost waits for data
@@ -135,6 +131,14 @@ from the remote host before timing out and aborting.
 This option tells rpost to send the AUTHINFO USER command immediately upon connect to the
 remote server, rather than wait for a request for authorization.  You must supply the
 \-U and \-P options when you use this option.
+
+.BI \-U
+userid
+.BI \-P
+password
+
+These two options let you specify a userid and password, if your NNTP server
+requires them.
 
 .SH STDIN MODE
 rpost
@@ -162,6 +166,9 @@ prefix
 .BI -d
 .BI -f
 filter $$o=<outfile> filter_arg1 ...
+OR
+.BI -F
+perlfilter
 
 -b batchfile
 
@@ -200,7 +207,8 @@ to its base directory /usr/spool/news.  In that case just use:
 -f filter $$o=<outfile> filter_arg1 filter_arg2 ...
 
 In many cases, each article must be massaged before the 
-remote NNTP will accept it.  This option lets you do that.
+remote NNTP will accept it.  This option, and the embedded
+perl filter option below, lets you do that.
 Note that the -f .... option must be the LAST option, as
 everything that follows it is passed to the filter, except
 as noted below.
@@ -252,6 +260,45 @@ as above, or with single quotes, to prevent the shell from
 trying to interpret these as variables.  Failure to escape them will result
 in rpost not working!
 
+
+.BI -F
+perlfilter
+.PP
+This option allows you to use an embedded perl filter to filter your articles.
+In order to use this, you must edit the Makefile, and define the various
+PERL_ options.
+It has a couple of advantages over the -f option above.  Because it is 
+embedded perl, there are no forks and execls() done, so it should be faster.
+Also, you don't need to worry about the arguments to the program and 
+escaping $$, etc as above.
+.PP
+Rpost will, when it starts up, load in the perlfilter file designated and parse
+it for syntax errors.  Then, for each article to be uploaded, rpost will call the 
+subroutine "perl_rpost", contained in the perlfilter file.  See sample/put.news.pl
+for a complete working example.  There are
+three key points you need to be aware of when creating your filter.  
+
+.RS
+1. The perlfilter file must contain the line "package Embed::Persistant;", so
+that variables in the perlfilter file don't clash with rpost variables, and
+the subroutine must be called "perl_rpost".  This can be changed by editting
+the PERL_RPOST_SUB define in suck_config.h.
+.RE
+
+.RS
+2. The perl_rpost subroutine receives the input file name as its sole argument,
+and must return the full path to the location of the
+filtered article as a single scalar string (return $outfile).
+.RE
+
+.RS
+3. The subroutine must explicitly close the output file (containing the filtered
+argument) before it returns.  This is because perl will only do an automatic
+close upon program completion (in our case when rpost exits), or when the 
+file handle is reused (the next time the subroutine is called).  If the
+close is not done, then more than likely, a 0 byte file will exist when
+rpost tries to post the article, and errors will result.
+ 
 .SH WARNING:
 
 Be very careful with what the filter program deletes from the article.  Deleting

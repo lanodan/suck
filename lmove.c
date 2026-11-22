@@ -105,8 +105,6 @@ int main(int argc, char *argv[]) {
 	retval = load_config(&master);
 
 	if(master.debug == TRUE) {
-		do_debug("master.msgs = %d\n", master.msgs);
-		do_debug("master.debug = %d\n", master.debug);
 		do_debug("master.active_file = %s\n", (master.active_file == NULL) ? "NULL" : master.active_file);
 		do_debug("master.config_file = %s\n", (master.config_file == NULL) ? "NULL" : master.config_file);
 		do_debug("master.basedir = %s\n", master.basedir);
@@ -206,7 +204,7 @@ int move_msgs(PMaster master) {
 					/* make destination filename */
 					sprintf(n_fname, "%s/%d", make_dirname(master->basedir, group->group), group->highnr);
 					if(rename(o_fname, n_fname) != 0) {
-						error_log(ERRLOG_REPORT, lmove_phrases[13], o_fname, n_fname);
+						error_log(ERRLOG_REPORT, lmove_phrases[13], o_fname, n_fname, NULL);
 						MyPerror("");
 					}
 					else {
@@ -393,7 +391,7 @@ int check_dirs(PMaster master) {
 		retval = RETVAL_ERROR;
 	}
 	else if(stat(master->msgdir, &statbuf) != 0 || ! S_ISDIR(statbuf.st_mode)) {
-		error_log(ERRLOG_REPORT, lmove_phrases[10], master->msgdir);
+		error_log(ERRLOG_REPORT, lmove_phrases[10], master->msgdir, NULL);
 		retval = RETVAL_ERROR;
 	}
 	else {
@@ -464,7 +462,7 @@ void scan_args(PMaster master, int argc, char *argv[]) {
 					error_log(ERRLOG_REPORT, "%s\n",lmove_phrases[1],NULL);
 				}
 				else {
-					error_log(ERRLOG_SET_FILE, argv[++loop]);
+					error_log(ERRLOG_SET_FILE, argv[++loop], NULL);
 				}
 				break;
 			  case 'l': 	/* language  phrase file */

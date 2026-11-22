@@ -13,7 +13,12 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
+#endif
+#ifdef HAVE_NET_SOCKET_H
+#include <net/socket.h>
+#endif
 #include <errno.h>
 #include <stdarg.h>
 
@@ -54,6 +59,7 @@ int TimeOut = TIMEOUT;
 
 /* internal function proto */
 void vprint_phrases(FILE *, const char *, va_list);
+void do_debug_vl(const char *, va_list);
 void convert_nl(char *);
 char *findnl(char *, char *);
 
@@ -90,6 +96,40 @@ char *number(char *sp, int *intPtr) {
 	}
 	return retval;
 }
+/*----------------------------------------------------*/
+/* identical to above, except it gets a long vice int */
+char *get_long(char *sp, long *intPtr) {
+	int start, end;
+	char c;
+	char *retval;
+
+	if(sp==NULL) {
+		*intPtr=0; 
+		retval = sp;
+	}
+	else {
+		/* skip any leading spaces */
+		start = 0;
+		while(sp[start] == ' ') {
+			start++;
+		}
+		end = start;
+		while(isdigit(sp[end])) {
+			end++;
+		}
+		/* now we have the numbers width*/
+
+		c=sp[end];	/* save off the character */
+		sp[end]='\0';	/* truncate nr so sscanf works right */
+		sscanf(&sp[start],"%ld",intPtr);
+		sp[end]=c;	/* restore it back */
+
+		/* if at EOS return the NULL, else skip space */
+		retval = (sp[end] == '\0') ? sp+end : sp+(++end);
+	}
+	return retval;
+}
+
 /*---------------------------------------------*/
 struct hostent *get_hostent(const char *host) {
 	struct in_addr saddr;
@@ -206,19 +246,34 @@ void do_debug_binary(int len, const char *str) {
 		fclose(fptr);
 	}
 }
+/*-----------------------------------------------------------*/
+void do_debug_vl(const char *fmt, va_list args) {
+	FILE *fptr = NULL;
+	
+	if((fptr = fopen(N_DEBUG, "a")) == NULL) {
+		fptr = stderr;
+	}
+	vprint_phrases(fptr, fmt, args);
+
+	if(fptr != stderr) {
+		fclose(fptr);
+	}
+}
+
 /*------------------------------------------------------------*/
 void MyPerror(const char *message) {
 
 	/* can't just use perror, since it goes to stderr */
 	/* and I need to route it to my errlog */
 	/* so I have to recreate perror's format */
-
+	
 	/* in case of NULL ptr */
+	
 	if(message == NULL) {
 		message="";
 	}
 #ifdef HAVE_STRERROR
-	error_log(ERRLOG_REPORT, "%v1%: %v2%\n", message, strerror(errno), NULL);
+	error_log(ERRLOG_REPORT, "%v1%: %v2%\n", message, strerror(errno), NULL);	  
 #else
 	error_log(ERRLOG_REPORT, both_phrases[9], message, errno, NULL);
 #endif
@@ -428,10 +483,14 @@ void error_log(int mode, const char *fmt, ...) {
 	FILE *fptr = NULL;
 	va_list args;
 	static char errfile[PATH_MAX] = { '\0' };
-
+	static int debug = FALSE;
+	
 	va_start(args, fmt);	/* set up args */
 	
 	switch(mode) {
+	  case ERRLOG_SET_DEBUG:
+		debug = TRUE;
+		break;
 	  case ERRLOG_SET_FILE:
 		strcpy(errfile,fmt);
 		break;
@@ -443,6 +502,9 @@ void error_log(int mode, const char *fmt, ...) {
 			fptr = stderr;
 		}
 		vprint_phrases(fptr, fmt, args);
+		if(debug == TRUE) {
+			do_debug_vl(fmt, args);
+		}
 		if(fptr != stderr) {
 			fclose(fptr);
 		}
@@ -746,6 +808,21 @@ char *str_int(int nrin) {
 	}
 	
 	sprintf(strings[which], "%d", nrin);
+
+	return strings[which];
+}
+/*----------------------------------------------------------*/
+char *str_long(long nrin) {
+	
+	static char strings[PHRASES_MAX_NR_VARS][20];	/* lets pray longs don't get bigger than this */
+	static int which = 0;
+	
+	/* use a set of rotating buffers so can make multiple str_int calls */
+	if(++which == PHRASES_MAX_NR_VARS) {
+		which = 0;
+	}
+	
+	sprintf(strings[which], "%ld", nrin);
 
 	return strings[which];
 }

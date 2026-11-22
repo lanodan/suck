@@ -36,6 +36,9 @@
 /* Define if you have the strerror function.  */
 #undef HAVE_STRERROR
 
+/* Define if you have the <arpa/inet.h> header file.  */
+#undef HAVE_ARPA_INET_H
+
 /* Define if you have the <dirent.h> header file.  */
 #undef HAVE_DIRENT_H
 
@@ -47,6 +50,9 @@
 
 /* Define if you have the <ndir.h> header file.  */
 #undef HAVE_NDIR_H
+
+/* Define if you have the <net/socket.h> header file.  */
+#undef HAVE_NET_SOCKET_H
 
 /* Define if you have the <regex.h> header file.  */
 #undef HAVE_REGEX_H
@@ -80,7 +86,3 @@
 
 /* Define if you have the socks5 library (-lsocks5).  */
 #undef HAVE_LIBSOCKS5
-
-#ifdef _POSIX_VERSION
-#	define POSIX_SIGNALS 1
-#endif

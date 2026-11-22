@@ -8,11 +8,10 @@ const char *default_timer_phrases[] = {
 const char *default_chkh_phrases[] = {
 	"Can not open %v1%, Skipping\n",		/* 0 */
 	"Processing History File ",
-	"Processing History File - Old version ",
 	"Bogus line, ignoring: %v1%",
 	"Processed history, %v1% dupes removed\n",
-	"Out of Memory, skipping history check",	/* 5 */
-	"Processing History Database "
+	"Out of Memory, skipping history check",
+	"Processing History Database"			/* 5 */
 };
 
 const char *default_dedupe_phrases[] = {
@@ -47,6 +46,7 @@ const char *default_killf_phrases[] = {
 	"Unable to write article to disk\n",
 	"Nothing to scan for in body scan, ignoring\n", /* 10 */
 	"Invalid regular expression, ignoring, %v1% - %v2%\n"
+	"No character to process for non-regex, ignoring\n",
 };
 
 const char *default_killp_phrases[] = {
@@ -64,7 +64,12 @@ const char *default_killp_phrases[] = {
 	"Child died, cause of death unknown\n",
 	"killprg: Unable to log killed article",
 	"killprg: ARTICLE KILLED: MsgID %v1%\n",
-
+	"killperl: unable to allocate memory, ignoring\n",
+	"killperl: error parsing program - %v1%\n", /* 15 */
+	"killperl: evaluation error: %v1%\n",
+	"killperl: invalid number of values returned: %v1%\n",
+	"killperl: ARTICLE KILLED: MsgID %v1%\n",
+	"killperl: Unable to log killed article",
 };
 
 const char *default_sucku_phrases[] = { 
@@ -139,7 +144,10 @@ const char *default_suck_phrases[] = {
 	"Userid or Password not provided, unable to auto-authenticate\n", /* 55 */
 	"No local active file provided\n",
 	"Error writing article to file\n",
-	"Can't pre-batch files, no batch mode specified\n"
+	"Can't pre-batch files, no batch mode specified\n",
+	"Broken connection, aborting\n",
+	"Restart: Skipping first article\n", /*60*/
+	"No kill log file name provied\n",
 };
 
 const char *default_batch_phrases[] = {
@@ -171,6 +179,33 @@ const char *default_active_phrases[] = {
 	"Reading current sucknewsrc\n",
 	"New Group - adding to sucknewsrc: %v1%\n", /* 10 */
 	"Unable to open %v1%\n",
+	"Active-ignore - error in expression %v1% - %v2%\n",
+};
+
+const char *default_xover_phrases[] = {
+	"Unexpected XOVER command error, aborting: %v1%", /* 0 */
+	"Xover - Invalid Article Number - %v1%",
+	"Xover - Invalid Subject or early termination of line - %v1%",
+	"Xover - Invalid Author or early termination of line - %v1%",
+	"Xover - Invalid Date or early termination of line - %v1%",
+	"Xover - Invalid Article-ID or early termination of line - %v1%", /* 5 */
+	"Xover - Invalid Reference or early termination of line - %v1%", 
+	"Xover - Invalid Byte Count - %v1%",
+	"Xover - Invalid Line Count - %v1%",
+	"ARTICLE KILLED XOVER: group %v1% - %v2% - MsgID %v3%\n",
+	"Xover=%v1%\n", /* 10 */
+	"Unable to log Xover-killed article",
+	"Out of memory, unable to process Xover killfiles",
+	"No Message-ID in XOVER-%v1%- skipping\n", 
+};
+
+const char *default_xover_reasons[] = {
+	"Xover - Article too big", /* 0 */
+	"Xover - Article too small",
+	"Xover - Too many lines",
+	"Xover - Too few lines",
+	"Xover - Match on Header",
+	"Xover - No Match on Group Keep file", /* 5 */
 };
 
 int nr_suck_phrases= sizeof(default_suck_phrases)/sizeof(default_suck_phrases[0]);
@@ -183,5 +218,5 @@ int nr_killp_phrases= sizeof(default_killp_phrases)/sizeof(default_killp_phrases
 int nr_sucku_phrases= sizeof(default_sucku_phrases)/sizeof(default_sucku_phrases[0]);
 int nr_active_phrases=sizeof(default_active_phrases)/sizeof(default_active_phrases[0]);
 int nr_batch_phrases=sizeof(default_batch_phrases)/sizeof(default_batch_phrases[0]);
-
-
+int nr_xover_phrases=sizeof(default_xover_phrases)/sizeof(default_xover_phrases[0]);
+int nr_xover_reasons=sizeof(default_xover_reasons)/sizeof(default_xover_reasons[0]);

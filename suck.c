@@ -43,6 +43,7 @@
 #include "timer.h"
 #include "active.h"
 #include "batch.h"
+#include "xover.h"
 
 #ifdef MYSIGNAL 
 #include <signal.h>
@@ -57,7 +58,6 @@ int get_articles(PMaster);
 int get_one_article(PMaster, int);
 int do_connect(PMaster, int);
 int do_supplemental(PMaster);
-int allocnode(PMaster, char *, int, char *);
 int restart_yn(PMaster);
 int scan_args(PMaster, int, char *[]);
 void do_cleanup(void);
@@ -92,6 +92,8 @@ char **killp_phrases=default_killp_phrases;
 char **sucku_phrases=default_sucku_phrases;
 char **active_phrases=default_active_phrases;
 char **batch_phrases=default_batch_phrases;
+char **xover_phrases=default_xover_phrases;
+char **xover_reasons=default_xover_reasons;
 
 enum { STATUS_STDOUT, STATUS_STDERR };
 enum { RESTART_YES, RESTART_NO, RESTART_ERROR };
@@ -104,7 +106,8 @@ enum {
 	ARG_DEBUG, ARG_ERRLOG, ARG_HISTORY, ARG_KILLFILE, ARG_KLOG_NONE, ARG_KLOG_SHORT,  \
 	ARG_KLOG_LONG, ARG_MODEREADER, ARG_PORTNR, ARG_PASSWD, ARG_RESCAN, ARG_STATLOG, \
 	ARG_USERID, ARG_VERSION, ARG_WAIT, ARG_LOCALHOST, ARG_TIMEOUT, ARG_NRMODE, ARG_AUTOAUTH, \
-	ARG_NODEDUPE, ARG_NO_CHK_MSGID, ARG_READACTIVE, ARG_PREBATCH
+	ARG_NODEDUPE, ARG_NO_CHK_MSGID, ARG_READACTIVE, ARG_PREBATCH, ARG_SKIP_ON_RESTART, \
+	ARG_KLOG_NAME, ARG_USEGUI, ARG_XOVER, ARG_CONN_DEDUPE
 }; 
 
 typedef struct Arglist{
@@ -127,6 +130,7 @@ const Args arglist[] = {
 	{"dd", "dir_data",    1, ARG_DIR_DATA, 37},
 	{"dm", "dir_msgs",    1, ARG_DIR_MSGS, 37},
 	{"e",  "def_error_log", 0, ARG_DEF_ERRLOG, -1},
+	{"f",  "reconnect_dedupe", 0, ARG_CONN_DEDUPE, -1},	
 	{"h",  "host", 1, ARG_HOST, 51},
 	{"hl", "localhost", 1, ARG_LOCALHOST, 50},
 	{"k",  "kill_no_postfix", 0, ARG_NO_POSTFIX, -1},
@@ -147,13 +151,16 @@ const Args arglist[] = {
 	{"C",  "reconnect", 1, ARG_RECONNECT, 49},
 	{"D",  "debug", 0, ARG_DEBUG, -1},
 	{"E",  "error_log", 1, ARG_ERRLOG, 41},
+	{"G",  "use_gui", 0, ARG_USEGUI, -1},
 	{"H",  "no_history", 0, ARG_HISTORY, -1},
 	{"K",  "killfile", 0, ARG_KILLFILE, -1},
 	{"L",  "kill_log_none", 0, ARG_KLOG_NONE, -1},
+	{"LF", "kill_log_name", 1, ARG_KLOG_NAME, 61},
 	{"LS", "kill_log_short", 0, ARG_KLOG_SHORT, -1},
 	{"LL", "kill_log_long",  0, ARG_KLOG_LONG, -1},
 	{"M",  "mode_reader", 0, ARG_MODEREADER, -1},
 	{"N",  "portnr", 1, ARG_PORTNR, 45},
+	{"O",  "skip_on_restart", 0, ARG_SKIP_ON_RESTART, -1},	
 	{"P",  "password", 1, ARG_PASSWD, 44},
 	{"R",  "no_rescan", 0, ARG_RESCAN, -1},
 	{"S",  "status_log", 1, ARG_STATLOG, 42},
@@ -163,13 +170,12 @@ const Args arglist[] = {
 	{"U",  "userid",  1, ARG_USERID,  43},
 	{"V",  "version", 0, ARG_VERSION, -1},
 	{"W",  "wait", 2, ARG_WAIT, 46},
+	{"X",  "no_xover", 0, ARG_XOVER, -1},
 };
 
 #define MAX_ARG_PARAMS 2	/* max nr of params with any arg */
 #define NR_ARGS (sizeof(arglist)/sizeof(arglist[0]))
 
-#define TRUE_STR(x) (((x) == TRUE) ? "TRUE" : "FALSE")
-#define NULL_STR(x) (((x) == NULL) ? "NULL" : (x))
 /*------------------------------------------------------------------*/
 int main(int argc, char *argv[]) {
 	
@@ -177,8 +183,8 @@ int main(int argc, char *argv[]) {
 	Master master;
 	PList temp;
 	PGroups ptemp;
-	char **args, **fargs = NULL;
-	int loop, fargc, retval = RETVAL_OK;
+	char *inbuf, **args, **fargs = NULL;
+	int nr, resp, loop, fargc, retval = RETVAL_OK;	
 
 #ifdef LOCKFILE
 	const char *lockfile = NULL;
@@ -227,6 +233,12 @@ int main(int argc, char *argv[]) {
 	master.chk_msgid = TRUE; /* do we check MsgID for trailing > */
 	master.activefile = NULL;
 	master.prebatch = FALSE; /* do we try to batch any left over articles b4 we start? */
+	master.grpnr = -1;	/* what group number are we currently on */
+	master.skip_on_restart = FALSE;
+	master.kill_log_name = N_KILLLOG;
+	master.use_gui = FALSE;
+	master.do_xover = TRUE;
+	master.conn_dedupe = FALSE;
 	
 	/* have to do this next so if set on cmd line, overrides this */
 
@@ -284,43 +296,47 @@ int main(int argc, char *argv[]) {
 		do_debug("Suck version %s\n",SUCK_VERSION);
 		do_debug("master.MultiFile = %d\n", master.MultiFile);
 		do_debug("master.status_file = %d\n",master.status_file);
-		do_debug("master.status_file_name = %s\n", NULL_STR(master.status_file_name));
-		do_debug("master.do_killfile = %s\n", TRUE_STR(master.do_killfile));
-		do_debug("master.do_chkhistory = %s\n", TRUE_STR(master.do_chkhistory));
-		do_debug("master.do_modereader = %s\n", TRUE_STR(master.do_modereader));
-		do_debug("master.always_batch = %s\n", TRUE_STR(master.always_batch));
+		do_debug("master.status_file_name = %s\n", null_str(master.status_file_name));
+		do_debug("master.do_killfile = %s\n", true_str(master.do_killfile));
+		do_debug("master.do_chkhistory = %s\n", true_str(master.do_chkhistory));
+		do_debug("master.do_modereader = %s\n", true_str(master.do_modereader));
+		do_debug("master.always_batch = %s\n", true_str(master.always_batch));
 		do_debug("master.rnews_size = %ld\n", master.rnews_size);
 		do_debug("master.batch = %d\n", master.batch);
-		do_debug("master.batchfile = %s\n", NULL_STR(master.batchfile));
-		do_debug("master.cleanup = %s\n", TRUE_STR(master.cleanup));
-		do_debug("master.host = %s\n", NULL_STR(master.host));
+		do_debug("master.batchfile = %s\n", null_str(master.batchfile));
+		do_debug("master.cleanup = %s\n", true_str(master.cleanup));
+		do_debug("master.host = %s\n", null_str(master.host));
 		do_debug("master.portnr = %u\n", master.portnr);
 		do_debug("master.pause_time = %d\n", master.pause_time);
 		do_debug("master.pause_nrmsgs = %d\n", master.pause_nrmsgs);
 		do_debug("master.sig_pause_time = %d\n", master.sig_pause_time);
 		do_debug("master.sig_pause_nrmsgs = %d\n", master.sig_pause_nrmsgs);
 		do_debug("master.killfile_log = %d\n", master.killfile_log);
-		do_debug("master.phrases = %s\n", NULL_STR(master.phrases));
-		do_debug("master.errlog = %s\n", NULL_STR(master.errlog));
-		do_debug("master.rescan = %s\n", TRUE_STR(master.rescan == TRUE));
-		do_debug("master.quiet = %s\n", TRUE_STR(master.quiet));
-		do_debug("master.kill_ignore_postfix = %s\n", TRUE_STR(master.kill_ignore_postfix));
+		do_debug("master.phrases = %s\n", null_str(master.phrases));
+		do_debug("master.errlog = %s\n", null_str(master.errlog));
+		do_debug("master.rescan = %s\n", true_str(master.rescan == TRUE));
+		do_debug("master.quiet = %s\n", true_str(master.quiet));
+		do_debug("master.kill_ignore_postfix = %s\n", true_str(master.kill_ignore_postfix));
 		do_debug("master.reconnect_nr=%d\n", master.reconnect_nr);
-		do_debug("master.do_active = %s\n", TRUE_STR(master.do_active));
-		do_debug("master.localhost = %s\n", NULL_STR(master.localhost));
-		do_debug("master.nrmode = %s\n", TRUE_STR(master.nrmode));
-		do_debug("master.auto_auth = %s\n", TRUE_STR(master.auto_auth));
-		do_debug("master.no_dedupe = %s\n", TRUE_STR(master.no_dedupe));
-		do_debug("master.chk_msgid = %s\n", TRUE_STR(master.chk_msgid));
-		do_debug("master.activefile = %s\n", NULL_STR(master.activefile));
-		do_debug("master.prebatch = %s\n", TRUE_STR(master.prebatch));
+		do_debug("master.do_active = %s\n", true_str(master.do_active));
+		do_debug("master.localhost = %s\n", null_str(master.localhost));
+		do_debug("master.nrmode = %s\n", true_str(master.nrmode));
+		do_debug("master.auto_auth = %s\n", true_str(master.auto_auth));
+		do_debug("master.no_dedupe = %s\n", true_str(master.no_dedupe));
+		do_debug("master.chk_msgid = %s\n", true_str(master.chk_msgid));
+		do_debug("master.activefile = %s\n", null_str(master.activefile));
+		do_debug("master.prebatch = %s\n", true_str(master.prebatch));
+		do_debug("master.skip_on_restart = %s\n", true_str(master.skip_on_restart));
+		do_debug("master.kill_log_name = %s\n", null_str(master.kill_log_name));
+		do_debug("master.use_gui = %s\n", true_str(master.use_gui));
+		do_debug("master.do_xover = %s\n", true_str(master.do_xover));
+		do_debug("master.conn_dedupe = %s\n", true_str(master.conn_dedupe));
 		
 #ifdef TIMEOUT
 		do_debug("TimeOut = %d\n", TimeOut);
 #endif
 		do_debug("master.debug = TRUE\n");
 	}
-		
         /* now do any final args checks needed */
 	/* check to see if we have enough info to scan the localhost active file */
 	if((master.do_active == TRUE || master.batch == BATCH_LIHAVE) && master.localhost == NULL) {
@@ -391,15 +407,24 @@ int main(int argc, char *argv[]) {
 		/* now parse the killfile */
 #ifdef KILLFILE
 		if(master.do_killfile == TRUE) {
-			master.killp = parse_killfile(master.killfile_log, master.debug, master.kill_ignore_postfix);
+			master.killp = parse_killfile(N_KILLFILE, master.killfile_log, master.debug, master.kill_ignore_postfix);
 		}
 #endif
+		/* now parse the xover killfile */
+		if(master.do_xover == TRUE) {
+			master.xoverp = parse_killfile(N_XOVER, master.killfile_log, master.debug, master.kill_ignore_postfix);
+		}
 		
 		print_phrases(master.msgs, suck_phrases[1], master.host, NULL);		
 		if(do_connect(&master, CONNECT_FIRST) != RETVAL_OK) {
 			retval = RETVAL_ERROR;
 		}
 		else {
+			/* if we have XOVER killfiles, we need to get the format of em before any processing */
+			if(master.xoverp != NULL) {
+				get_xoverview(&master);
+			}
+			
 			/* first, check for restart articles, */
 			/* then scan for any new articles */
 			if((loop = restart_yn(&master)) == RESTART_ERROR) {
@@ -422,12 +447,30 @@ int main(int argc, char *argv[]) {
  					print_phrases(master.msgs,suck_phrases[3], NULL);
 					retval = RETVAL_NOARTICLES;
 				}
-				else {	
+				/* reconnect after dedupe, in case of time out due to long dedupe time*/
+				if(master.conn_dedupe == TRUE) {
+					retval = do_connect(&master, CONNECT_AGAIN);
+				}
+				if(retval == RETVAL_OK) {
 					retval = get_articles(&master);
+				}
 			}
+			/* send quit, and get reply */
+			sputline(master.sockfd,"quit\r\n");
+			if(master.debug == TRUE) {
+				do_debug("Sending command: quit\n");
 			}
+			do {
+				resp = sgetline(master.sockfd, &inbuf);
+				if(resp>0) {
+					if(master.debug == TRUE) {
+						do_debug("Quitting GOT: %s", inbuf);
+					}
+					number(inbuf, &nr);
+					
+				}
 			
-			send_command( &master, "quit\r\n", NULL, 0 );
+			}while(nr != 205 && resp > 0);	
 		}
 		if(master.sockfd >= 0) {
 			close(master.sockfd);
@@ -497,26 +540,57 @@ int main(int argc, char *argv[]) {
 	free_phrases();	/* do this last so everything is displayed correctly */
 	exit(retval);
 }
+/*-----------------------------------------------------------*/
+/* print NULL or the string */
+const char *null_str(const char *ptr) {
+	const char *nullp = "NULL";
+
+	return (ptr == NULL) ? nullp : ptr;
+}
+/*-----------------------------------------------------------*/
+/* print TRUE or FALSE if our nr is 0 or non-zero */
+const char *true_str(int nr) {
+	const char *true_s = "TRUE";
+	const char *false_s = "FALSE";
+	
+	return (nr == TRUE) ? true_s : false_s;
+}
 /*------------------------------------------------------------*/
 int do_connect(PMaster master, int which_time) {
 
 	char *inbuf;
-	int resp, retval = RETVAL_OK;
+	int nr, resp, retval = RETVAL_OK;
 	struct hostent *hi;
-	FILE *fp = master->msgs;
-
+	FILE *fp;
+	
+	
 	if(which_time != CONNECT_FIRST) {
 		/* close down previous connection */
-		/* set fp to NULL so connect_to_nntphost doesn't display anything */
-		send_command( master, "quit\r\n", NULL, 0 );
+		sputline(master->sockfd, "quit\r\n");
+		do {
+			resp = sgetline(master->sockfd, &inbuf);
+			if(resp>0) {
+				if(master->debug == TRUE) {
+					do_debug("Reconnect GOT: %s", inbuf);
+				}
+				number(inbuf, &nr);
+			}
+			
+		}while(nr != 205 && resp > 0);		
 		close(master->sockfd);
-		fp = NULL;
+
+		/* now reset everything */
+		if(master->curr != NULL) {
+			(master->curr)->sentcmd = FALSE;
+		}
+		master->grpnr = -1;		
 	}
 	
 	if(master->debug == TRUE) {
 		do_debug("Connecting to %s on port %d\n", master->host, master->portnr);
 	}
-	master->sockfd = connect_to_nntphost( master->host, &hi, fp, master->portnr);
+	fp = (which_time == CONNECT_FIRST) ? master->msgs : NULL;
+	master->sockfd = connect_to_nntphost( master->host, &hi, fp , master->portnr);
 	if(master->sockfd < 0 ) {
 		retval = RETVAL_ERROR;
 	}
@@ -529,7 +603,7 @@ int do_connect(PMaster master, int which_time) {
 			do_debug("Got: %s", inbuf);
 		}
 		if(which_time == CONNECT_FIRST) {
-			fprintf(master->msgs,"%s", inbuf );
+			fprintf(master->msgs ,"%s", inbuf );
 		}
 		/* check to see if we have to do authorization now */
 		number(inbuf, &resp);
@@ -542,7 +616,7 @@ int do_connect(PMaster master, int which_time) {
 			if(retval == RETVAL_OK) {			
 				/* Again the announcement */
 				if(which_time == CONNECT_FIRST) {
-					fprintf(master->msgs,"%s",inbuf);
+					fprintf(master->msgs ,"%s",inbuf);
 				}
 			}
 		}
@@ -564,7 +638,9 @@ int do_connect(PMaster master, int which_time) {
 /*--------------------------------------------------------------------*/
 int get_message_index(PMaster master) {
 
-	int maxread,nrread,lastread,retval;
+	long lastread;
+	int nrread, retval, maxread;
+	
 	char buf[MAXLINLEN], group[512];
 	FILE *ifp,*tmpfp;
 
@@ -589,7 +665,7 @@ int get_message_index(PMaster master) {
 		}
 		else {
 			maxread = -1; /* just in case */
-			nrread = sscanf(buf, "%s %d %d\n", group, &lastread, &maxread);
+			nrread = sscanf(buf, "%s %ld %d\n", group, &lastread, &maxread);
 			if ( nrread < 2 || nrread > 3) {
 				error_log(ERRLOG_REPORT, suck_phrases[9], buf, NULL);
 				fputs(buf, tmpfp);	/* rewrite the line */
@@ -627,10 +703,11 @@ int get_message_index(PMaster master) {
 	return retval;
 }
 /*-----------------------------------------------------------------------------------------------------*/
-int do_one_group(PMaster master, char *buf, char *group, FILE *newrc, int lastread, int maxread) {
+int do_one_group(PMaster master, char *buf, char *group, FILE *newrc, long lastread, int maxread) {
 
 	char *sp, *inbuf, cmd[MAXLINLEN];
-	int count,low,high,response,retval,i;
+	long count,low,high;
+	int response,retval,i;
 	
 	retval = RETVAL_OK;
 	
@@ -653,14 +730,15 @@ int do_one_group(PMaster master, char *buf, char *group, FILE *newrc, int lastre
 				break;
 			default:
 				error_log(ERRLOG_REPORT, suck_phrases[12],group,str_int(response),NULL);
+				retval = RETVAL_ERROR; /* bomb out on wacko errors */
 				break;
 			}
 		}
 		else {
-			sp = number(sp, &count);
-  			sp = number(sp, &low);
-			sp = number(sp, &high);
-  			fprintf(newrc, "%s %d", group, high);
+			sp = get_long(sp, &count);
+  			sp = get_long(sp, &low);
+			sp = get_long(sp, &high);
+  			fprintf(newrc, "%s %ld", group, high);
 			
 			if(maxread > 0) {
 				fprintf(newrc, " %d", maxread);
@@ -698,27 +776,36 @@ int do_one_group(PMaster master, char *buf, char *group, FILE *newrc, int lastre
 					lastread = high-maxread;
 					print_phrases(master->msgs, suck_phrases[14], group, str_int(maxread), NULL);
 				}
-   
-   				sprintf(cmd, "xhdr Message-ID %d-\r\n", lastread+1);
-   				print_phrases(master->msgs, suck_phrases[15], group, str_int(high-lastread), str_int(lastread+1), str_int(high), NULL);
-				i = send_command(master,cmd,&inbuf,221);
-				if(i != RETVAL_OK) {
-					retval = RETVAL_ERROR;
+				print_phrases(master->msgs, suck_phrases[15], group, str_long(high-lastread), str_long(lastread+1), str_long(high), NULL);
+				if(master->xoverp != NULL) {
+					/* do this via the xover command */
+					retval = do_group_xover(master, group, lastread+1);
 				}
-				else {
-					do {
-     						if(sgetline(master->sockfd, &inbuf) < 0) {
-							retval = RETVAL_ERROR;
-						}
-						else if (*inbuf != '.' ) {
-							retval = allocnode(master, inbuf, MANDATORY_OPTIONAL, group);
-						}
-					} while (retval == RETVAL_OK && *inbuf != '.' && *(inbuf+1) != '\n');
-				} /* end if response */
+				if((master->xoverp == NULL) || (retval == RETVAL_ERROR)) {
+					/* do this the normal way */
+					sprintf(cmd, "xhdr Message-ID %ld-\r\n", lastread+1);
+					i = send_command(master,cmd,&inbuf,221);
+					if(i != RETVAL_OK) {
+						retval = RETVAL_ERROR;
+					}
+					else {
+						do {
+							if(sgetline(master->sockfd, &inbuf) < 0) {
+								retval = RETVAL_ERROR;
+							}
+							else if (*inbuf != '.' ) {
+								retval = allocnode(master, inbuf, MANDATORY_OPTIONAL, group, 0L);
+							}
+						} while (retval == RETVAL_OK && *inbuf != '.' && *(inbuf+1) != '\n');
+					} /* end if response */
+				} /* end if xover */	
   			} /* end if lastread */
 		} /* end response */
 	} /* end else */
 
+	if(retval == RETVAL_ERROR) {
+		error_log(ERRLOG_REPORT, suck_phrases[59], NULL);
+	}
 	return retval;
 }
 /*-----------------------------------------------------------*/
@@ -801,14 +888,26 @@ int get_articles(PMaster master) {
 				if(master->status_file == FALSE && master->quiet == FALSE) {
 					/* if we are going to a file, we don't want all of these articles printed */
 					/* or if quiet flag is set */
-#ifndef HAVE_GETTIMEOFDAY
-  					fprintf(master->msgs, "%5d\r",master->nritems  - master->itemon);
-#else
+					/* this stuff doesn't go thru print_phrases so I can keep spacing right */
+					/* and I only print numbers and the BPS */
+#ifdef HAVE_GETTIMEOFDAY
 					bps = TimerFunc(TIMER_GET_BPS, 0, master->msgs);
-					/* these don't go thru print_phrases so I can keep spacing right */
-					/* and it only prints numbers and the BPS*/
-					fprintf(master->msgs, "%5d %9.1f %s\r",master->nritems-master->itemon,bps,suck_phrases[5]);
 #endif
+					if(master->use_gui == TRUE) {
+						/* this stuff is formatted by the GUI so we put it out in a format it likes */
+#ifndef HAVE_GETTIMEOFDAY
+						fprintf(master->msgs, "---%d+++\n",master->nritems - master->itemon);
+#else
+						fprintf(master->msgs, "---%d+++%f\n", master->nritems - master->itemon, bps);
+#endif /* HAVE_GETTIMEOFDAY */
+					}
+					else {
+#ifndef HAVE_GETTIMEOFDAY
+						fprintf(master->msgs, "%5d\r",master->nritems  - master->itemon);
+#else
+						fprintf(master->msgs, "%5d %9.1f %s\r",master->nritems-master->itemon,bps,suck_phrases[5]);
+#endif /* HAVE_GETTIMEOFDAY */
+					}
 					fflush(master->msgs);	/* so message gets printed now */
 				}
 #ifdef KILLFILE
@@ -866,7 +965,7 @@ int do_supplemental(PMaster master) {
 				error_log(ERRLOG_REPORT, suck_phrases[18], linein, NULL);
 			}
 			else {
-				retval = allocnode(master, linein, MANDATORY_YES, NULL);
+				retval = allocnode(master, linein, MANDATORY_YES, NULL, 0L);
 			}
 		}
 		print_phrases(master->msgs, suck_phrases[19], str_int(master->nritems-oldkept), \
@@ -909,7 +1008,7 @@ int do_supplemental(PMaster master) {
 						}
 					}
 				
-					if(fprintf(fp, "%d %s %c\n", curr->nr, curr->msgnr, curr->mandatory) == 0) {
+					if(fprintf(fp, "%ld %s %c\n", curr->nr, curr->msgnr, curr->mandatory) == 0) {
 						retval = RETVAL_ERROR;
 						MyPerror(full_path(FP_GET, FP_TMPDIR, N_SORTED));
 					}
@@ -979,13 +1078,17 @@ int do_supplemental(PMaster master) {
 	 
  }		 
 /*-----------------------------------------------------------------------*/
-int allocnode(PMaster master, char *linein, int mandatory, char *group) {
+int allocnode(PMaster master, char *linein, int mandatory, char *group, long msgnr_in) {
+	/* if msgnr_in is not filled in (0), then parse the msgnr off the linein */
+	
 	/* if allocate memory here, must free in free_one_node */
 	
 	PList ptr = NULL;
 	char *end_ptr, *st_ptr;
 	static PList curr = NULL;	/* keep track of current end of list */
-	int msgnr = 0, groupnr = 0, retval = RETVAL_OK;
+	int groupnr = 0, retval = RETVAL_OK;
+	long msgnr = 0;
+	
 	static int warned = FALSE;
 
 	/* get the article nr */
@@ -994,11 +1097,19 @@ int allocnode(PMaster master, char *linein, int mandatory, char *group) {
 		st_ptr = linein;
 	}
 	else {
-		st_ptr = number(linein,&msgnr);
-		if(msgnr == 0 && warned == FALSE) {
-			warned = TRUE;
-			error_log(ERRLOG_REPORT, suck_phrases[53], NULL);
+		if (msgnr_in > 0) {
+			/* we're prob called by xover code */
+			st_ptr = linein;
+			msgnr = msgnr_in;
 		}
+		else {
+			st_ptr = get_long(linein,&msgnr);
+			if(msgnr == 0 && warned == FALSE) {
+				warned = TRUE;
+				error_log(ERRLOG_REPORT, suck_phrases[53], NULL);
+			}
+		}
+		
 		if(msgnr > 0 && group != NULL) {
 			groupnr = get_group_number(master, group);
 		}
@@ -1064,7 +1175,7 @@ void free_one_node(PList node) {
 /*----------------------------------------------------------------------------------*/
  const char *build_command(PMaster master, const char *cmdstart, PList article) {
 	 static char cmd[MAXLINLEN+1];
-	 static int grpnr = 0, warned = FALSE;
+	 static int warned = FALSE;
 	 char *resp;
 	 char grpcmd[MAXLINLEN];
 	 
@@ -1076,7 +1187,7 @@ void free_one_node(PList node) {
 		 if(article->nr == 0) {
 			 master->nrmode = FALSE;
 		 }
-		 else if(grpnr != article->groupnr) {
+		 else if(master->grpnr != article->groupnr) {
 			 grps = master->groups;
 			 while(grps != NULL && grps->nr != article->groupnr) {
 				 grps = grps->next;
@@ -1089,13 +1200,13 @@ void free_one_node(PList node) {
 				 }
 				 else {
 					 /* so don't redo group command on next one */
-					 grpnr = grps->nr;
+					 master->grpnr = grps->nr;
 				 }
 			 }	    
 		 }
 		 if(master->nrmode == TRUE) {
 			 /* everything hunky dory, we've switched groups, and got a good nr */
-			 sprintf(cmd, "%s %d\r\n", cmdstart, article->nr);
+			 sprintf(cmd, "%s %ld\r\n", cmdstart, article->nr);
 		 }
 		 else if(warned == FALSE) {
 			 /* tell of the switch to nonnr mode */
@@ -1309,6 +1420,12 @@ int restart_yn(PMaster master) {
 		/* the above is done since we write the byte before hand */
 		/* now build the link list in master */
 
+		/* do we skip the article we timed out on when we aborted?*/
+		if(master->skip_on_restart == TRUE) {
+			master->itemon++;
+			print_phrases(master->msgs, suck_phrases[60], NULL);
+		}
+		
 		fso = full_path(FP_GET, FP_TMPDIR, N_SORTED);
 		i = RETVAL_OK;
 		if((fp = fopen(fso, "r")) != NULL) {
@@ -1328,7 +1445,7 @@ int restart_yn(PMaster master) {
 					optional = msgid[x];
 					msgid[x-1] = '\0';
 					/* restart recovery file is in format that allocnode needs */
-					i = allocnode(master, msgid, optional, group);
+					i = allocnode(master, msgid, optional, group, 0L);
 				}
 			}
 			fclose(fp);
@@ -1387,62 +1504,62 @@ void pause_signal(int action, PMaster master) {
 }		
 #endif
 /*----------------------------------------------------------------*/
-int send_command(PMaster master, const char *cmd, char **ret_response, int good_response) {
-	/* this is needed so can do user authorization */
+ int send_command(PMaster master, const char *cmd, char **ret_response, int good_response) {
+	 /* this is needed so can do user authorization */
 
-	int len, retval = RETVAL_OK, nr;
-	char *resp;
+	 int len, retval = RETVAL_OK, nr;
+	 char *resp;
 
-	if(master->debug == TRUE) {
-		do_debug("sending command: %s", cmd);
-	}
-	sputline(master->sockfd, cmd);
-	len = sgetline(master->sockfd, &resp);	
-	if( len < 0) {	
-		retval = RETVAL_ERROR;		  	
-	}					
-	else {
-	  if(master->debug == TRUE) {
-	    do_debug("got answer: %s", resp);
-	  }
+	 if(master->debug == TRUE) {
+		 do_debug("sending command: %s", cmd);
+	 }
+	 sputline(master->sockfd, cmd);
+	 len = sgetline(master->sockfd, &resp);	
+	 if( len < 0) {	
+		 retval = RETVAL_ERROR;		  	
+	 }					
+	 else {
+		 if(master->debug == TRUE) {
+			 do_debug("got answer: %s", resp);
+		 }
 
-	  TimerFunc(TIMER_ADDBYTES, len, NULL);
+		 TimerFunc(TIMER_ADDBYTES, len, NULL);
 
-	  number(resp, &nr);
-	  if(nr == 480 ) { 
-		  /* we must do authorization */
-		  retval = do_authenticate(master);
-		  if(retval == RETVAL_OK) {
-			  /* resend command */
-			  sputline(master->sockfd, cmd);
-			  if(master->debug == TRUE) {
-				  do_debug("sending command: %s", cmd);
-			  }
-			  len = sgetline(master->sockfd, &resp);
-			  if( len < 0) {	
-				  retval = RETVAL_ERROR;		  	
-			  }
-			  else {
-				  number(resp,&nr);
-				  if(master->debug == TRUE) {
-					  do_debug("got answer: %s", resp);
-				  }
+		 number(resp, &nr);
+		 if(nr == 480 ) { 
+			 /* we must do authorization */
+			 retval = do_authenticate(master);
+			 if(retval == RETVAL_OK) {
+				 /* resend command */
+				 sputline(master->sockfd, cmd);
+				 if(master->debug == TRUE) {
+					 do_debug("sending command: %s", cmd);
+				 }
+				 len = sgetline(master->sockfd, &resp);
+				 if( len < 0) {	
+					 retval = RETVAL_ERROR;		  	
+				 }
+				 else {
+					 number(resp,&nr);
+					 if(master->debug == TRUE) {
+						 do_debug("got answer: %s", resp);
+					 }
 
-				  TimerFunc(TIMER_ADDBYTES, len, NULL);
+					 TimerFunc(TIMER_ADDBYTES, len, NULL);
 
-			  }
-		  }
-	  }
-	  if (good_response != 0 && nr != good_response) {
-	    error_log(ERRLOG_REPORT, suck_phrases[29],cmd,resp,NULL);
-	    retval = RETVAL_UNEXPECTEDANS;
-	  }
-	}
-	if(ret_response != NULL) {
-		*ret_response = resp;
-	}
-	return retval;
-}
+				 }
+			 }
+		 }
+		 if (good_response != 0 && nr != good_response) {
+			 error_log(ERRLOG_REPORT, suck_phrases[29],cmd,resp,NULL);
+			 retval = RETVAL_UNEXPECTEDANS;
+		 }
+	 }
+	 if(ret_response != NULL) {
+		 *ret_response = resp;
+	 }
+	 return retval;
+ }
 /*------------------------------------------------------------------------------*/
 /* 1. move N_OLDRC to N_OLD_OLDRC	N_OLDRC might not exist	       	        */
 /* 2. move N_NEWRC to N_OLDRC							*/
@@ -1632,6 +1749,8 @@ int parse_args(PMaster master, int arg, char *argv[]) {
 		break;
 	case ARG_DEBUG:	/* debug */
 		master->debug = TRUE;
+		/* now set up our error log and MyPerror reporting so it goes to debug.suck */
+		error_log(ERRLOG_SET_DEBUG, NULL, NULL);
 		break;
 	case ARG_ERRLOG:	/* error log path */
 		error_log(ERRLOG_SET_FILE, argv[0], NULL);
@@ -1671,7 +1790,7 @@ int parse_args(PMaster master, int arg, char *argv[]) {
 		master->userid = argv[0];
 		break;
 	case ARG_VERSION: 	/* show version number */
-		error_log(ERRLOG_REPORT,"Suck version %v1%\n",SUCK_VERSION);
+		error_log(ERRLOG_REPORT,"Suck version %v1%\n",SUCK_VERSION, NULL);
 		retval = RETVAL_VERNR;	/* so we don't do anything else */
 		break;
 	case ARG_WAIT:	/* wait (sleep) x seconds between every y articles */
@@ -1695,6 +1814,21 @@ int parse_args(PMaster master, int arg, char *argv[]) {
 		break;
 	case ARG_PREBATCH:
 		master->prebatch = TRUE;
+		break;
+	case ARG_SKIP_ON_RESTART:
+		master->skip_on_restart = TRUE;
+		break;
+	case ARG_KLOG_NAME:
+		master->kill_log_name = argv[0];
+		break;
+	case ARG_USEGUI:
+		master->use_gui = TRUE;
+		break;
+	case ARG_XOVER:
+		master->do_xover = FALSE;
+		break;
+	case ARG_CONN_DEDUPE:
+		master->conn_dedupe = TRUE;
 		break;
 #ifdef TIMEOUT
 	case ARG_TIMEOUT:
@@ -1814,7 +1948,9 @@ void load_phrases(PMaster master) {
 				   ( sucku_phrases= read_array(fpi, NR_SUCKU_PHRASES,TRUE)) &&
 				   (read_array(fpi, NR_LMOVE_PHRASES, FALSE) == NULL) && /* skip this one */
 				   ( active_phrases=read_array(fpi, NR_ACTIVE_PHRASES,TRUE)) &&
-				   ( batch_phrases= read_array(fpi, NR_BATCH_PHRASES,TRUE))) {
+				   ( batch_phrases= read_array(fpi, NR_BATCH_PHRASES,TRUE)) &&
+				   ( xover_phrases= read_array(fpi, NR_XOVER_PHRASES,TRUE)) &&
+				   ( xover_reasons= read_array(fpi, NR_XOVER_REASONS,TRUE))) {
 					error = FALSE;
 				}
 			}
@@ -1835,6 +1971,8 @@ void load_phrases(PMaster master) {
 			sucku_phrases=default_sucku_phrases;
 			active_phrases=default_active_phrases;
 			batch_phrases=default_batch_phrases;
+			xover_phrases=default_xover_phrases;
+			xover_reasons=default_xover_reasons;
 		}
 	}		
 }
@@ -1873,6 +2011,12 @@ void free_phrases(void) {
 		}
 		if(batch_phrases != default_batch_phrases) {
 			free_array(NR_BATCH_PHRASES, batch_phrases);
+		}
+		if(xover_phrases != default_xover_phrases) {
+			free_array(NR_XOVER_PHRASES, xover_phrases);
+		}
+		if(xover_reasons != default_xover_reasons) {
+			free_array(NR_XOVER_REASONS, xover_reasons);
 		}
 		
 }

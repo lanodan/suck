@@ -2,7 +2,8 @@
 CHANGELOG			# commentary on what changes I've made to the source
 CONTENTS			# this file
 README				# Descriptions and News you need to read.
-README.killfiles		# Descriptions of changes to killfiles in v3.6.0
+README.Gui			# about my java gui
+README.Xover			# about the new xover killfiles
 
 # SCRIPTS TO TIE ALL THIS STUFF TOGETHER
 sample/get.news.innxmit		# sample for INN (innxmit)
@@ -14,7 +15,9 @@ sample/put.news			# used by the get.news scripts
 sample/suckkillfile.sample
 sample/sucknewsrc.sample
 sample/suckothermsgs.sample
-sample/killprg_child.c
+sample/killprg_child.c		# sample of killprg routine
+sample/kill_perl.pl		# sample of perl embed for killfiles
+sample/put.news.pl		# sample of perl embed for rpost
 
 # MAN PAGES
 man/suck.1
@@ -22,24 +25,11 @@ man/lpost.1
 man/rpost.1
 man/testhost.1
 
-# JAPANESE DOCS
-Japanese.docs/Makefile.in
-Japanese.docs/README
-Japanese.docs/README.DOC
-Japanese.docs/lpost.1J.gz
-Japanese.docs/rpost.1J.gz
-Japanese.docs/suck.1J.gz
-Japanese.docs/testhost.1J.gz
-
-# SPANISH DOCS
-Spanish.docs/Makefile.in
-Spanish.docs/README
-Spanish.docs/README.Spain
-Spanish.docs/lpost.1
-Spanish.docs/phrases.spanish
-Spanish.docs/rpost.1
-Spanish.docs/suck.1
-Spanish.docs/testhost.1
+# JAVA RELATED FILES
+java/Suck.java
+java/Suck.class
+java/SuckMenu.class
+java/SuckUpdate.class
 
 # SOURCE FILES	
 active.c
@@ -73,6 +63,8 @@ testhost.c
 test_phrases.c
 timer.c
 timer.h
+xover.c
+xover.h
 
 # STUFF FOR AUTO-CONFIGURING
 Makefile.in

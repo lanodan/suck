@@ -6,13 +6,12 @@ SHELL=/bin/sh
 ############################################################################
 
 # Step1: Define the location of the History file(s)
-#HISTORYF=/var/news/etc/history
-HISTORYF=/usr/lib/news/history
+HISTORYF=/usr/news/db/history
 
 # Step 2: Define ONE of the CHKHISTORY 
-CHKHISTORY=chkhistory.o	# use flat file history routine
+CHKHISTORY=chkhistory.o		# use flat file history routine
 #CHKHISTORY=chkhistory_db.o	# use DB history routine, if you use 
-                                # DBM, NDBM, or DBZ
+                                # DBM, GDBM, NDBM, or DBZ
                                 # in order to use DBZ with INN you will need
                                 # the full compiled source code, especially
                                 # inn/lib/libinn.so & inn/include/dbz.h
@@ -21,29 +20,54 @@ CHKHISTORY=chkhistory.o	# use flat file history routine
 
 # Step 3: Define ONE of the Database Types
 #DB_TYPE=-DUSE_DBM
+#DB_TYPE=-DUSE_GDBM	
 #DB_TYPE=-DUSE_NDBM
-#DB_TYPE=-DUSE_DBZ
+#DB_TYPE=-DUSE_DBZ	# for inn-1.X.X users
+#DB_TYPE=-DUSE_INN2	# for inn-2.X.X users
 
 # Step 4: Define ONE Library that contains the functions
+# If you are using INN-2.1, and the compiler complains 
+# about Undefined Symbols QIOclose QIOopen QIOread
+# Use the DB_LIB that includes -lstorage
 #DB_LIB=-ldbm
+#DB_LIB=-lgdbm
 #DB_LIB=-lndbm
 #DB_LIB=-ldbz
+#DB_LIB=-linn -lstorage	# see note above
 #DB_LIB=-linn		# INN puts DBZ code in here
 
 # Step 5: IF your DB Library/Includes are in a non-standard place, 
 # define These
-#DB_INC_LOC=-I/usr/src/inn-1.7.2/include
-#DB_LIB_LOC=-L/usr/src/inn-1.7.2/
+#DB_INC_LOC=-I/usr/src/inn-2.1/include
+#DB_LIB_LOC=-L/usr/src/inn-2.1/lib
+
+# Step 6: If you want to use embedded PERL functions as kill routines
+# define these. 
+# PERL_CORE needs to point to where perl.h and libperl.a lives.
+# PERL_DEFS might need to be changed, depending on how you compiled
+# your perl.  These defaults should be good for most people.
+# If you get errors about missing libs, add em to the PERL_LIB define.
+# If your compile fails with refs to missing symbols like pow() and floor(),
+# add -lm to the PERL_LIB line.
+# The rest of these should be left alone (except to remove the #).
+#PERL_CORE=/usr/lib/perl5/lib/5.00502/i586-linux/CORE
+#PERL_LIB=-lperl -lcrypt
+#PERL_DEFS=-DPERL_EMBED -Dbool=char -DHAS_BOOL
+#PERL_INC_LOC=-I$(PERL_CORE)
+#PERL_LIB_LOC=-L$(PERL_CORE)
 
 ############################################################################
 # COMPILE flags for GCC
 # IF you are not using GCC comment this out 
 ############################################################################
 
-GCC_FLAGS =  -fno-strength-reduce -Wall -Wpointer-arith -Wcast-align \
-  -Wcast-qual -Wtraditional -Wshadow  -Waggregate-return \
-  -Wmissing-prototypes -Wnested-externs -Wstrict-prototypes \
-  -Wwrite-strings -Wmissing-declarations
+GCC_FLAGS =  -Wall -Wpointer-arith -Wcast-align -Wcast-qual -Wtraditional \
+  -Wshadow  -Waggregate-return -Wmissing-prototypes -Wnested-externs \
+  -Wstrict-prototypes -Wwrite-strings -Wmissing-declarations
+
+DBZ_GCC_FLAGS =  -Wall -Wpointer-arith -Wcast-align -Wcast-qual -Wtraditional \
+  -Waggregate-return -Wmissing-prototypes -Wnested-externs -Wwrite-strings \
+  -Wmissing-declarations
 
 ############################################################################
 # YOU SHOULD NOT NEED TO TOUCH BELOW HERE
@@ -57,8 +81,8 @@ srcdir = @srcdir@
 # Suck Makefile
 PKGNAME=suck
 VERSION_MAJOR=3
-VERSION_MINOR=9
-VERSION_PATCH=0
+VERSION_MINOR=10
+VERSION_PATCH=1
 VERSION=$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
 
 CC = @CC@
@@ -67,7 +91,7 @@ CC = @CC@
 CFLAGS = @CFLAGS@
 CPPFLAGS = -I. -I$(srcdir) @CPPFLAGS@
 LDFLAGS = @LDFLAGS@ 
-DEFS = @DEFS@ -DHISTORY_FILE=\"$(HISTORYF)\" -DSUCK_VERSION=\"$(VERSION)\" $(DB_TYPE)
+DEFS = @DEFS@ -DHISTORY_FILE=\"$(HISTORYF)\" -DSUCK_VERSION=\"$(VERSION)\"
 LIBS = @LIBS@ 
 
 prefix = @prefix@
@@ -78,7 +102,6 @@ mandir = $(exec_prefix)/man/man$(manext)
 srcdir = @srcdir@
 MAN = $(srcdir)/man
 SMAN= $(srcdir)/Spanish.docs
-JMAN= $(srcdir)/Japanese.docs
 
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
@@ -88,7 +111,7 @@ AUTOHEADER = @AUTOHEADER@
 
 #List of .o files suck needs to compile:
 suckobjs = both.o both_phrases.o suck.o suckutils.o killfile.o timer.o \
-           killprg.o dedupe.o suck_phrases.o active.o batch.o $(CHKHISTORY)
+           killprg.o dedupe.o suck_phrases.o active.o batch.o xover.o $(CHKHISTORY)
 rpostobjs = both.o both_phrases.o rpost.o rpost_phrases.o
 testhobjs = both.o both_phrases.o testhost.o test_phrases.o
 makepobjs = makephrases.o suck_phrases.o rpost_phrases.o test_phrases.o \
@@ -99,16 +122,16 @@ all: phrases.h suck rpost testhost lmove
 	@echo make done
 
 suck: $(suckobjs)
-	$(CC) $(LDFLAGS) $(DB_LIB_LOC) -o suck $(suckobjs) $(LIBS) $(DB_LIB)
+	$(CC) $(LDFLAGS) $(DB_LIB_LOC) $(PERL_LIB_LOC) -o suck $(suckobjs) $(LIBS) $(DB_LIB) $(PERL_LIB)
 
 lmove: $(lmoveobjs)
-	$(CC) $(LDFLAGS) -o lmove $(lmoveobjs) $(LIBS)
+	$(CC) $(LDFLAGS) $(PERL_LIB_LOC) -o lmove $(lmoveobjs) $(LIBS) $(PERL_LIB)
 
 lpost: lpost.o
 	$(CC) $(LDFLAGS) -o lpost lpost.o $(LIBS)
 
 rpost: $(rpostobjs)
-	$(CC) $(LDFLAGS) -o rpost $(rpostobjs) $(LIBS)
+	$(CC) $(LDFLAGS) $(PERL_LIB_LOC) -o rpost $(rpostobjs) $(LIBS) $(PERL_LIB)
 
 testhost: $(testhobjs)
 	$(CC) $(LDFLAGS) -o testhost $(testhobjs) $(LIBS)
@@ -124,9 +147,7 @@ phrases.h: makephrases
 
 install: install_bin install_man
 
-install_Japanese: install_bin install_jman
-
-install_Spanish: install_bin install_sman
+#install_Spanish: install_bin install_sman
 
 install_bin: suck rpost testhost lmove
 	- mkdir -p $(bindir)
@@ -144,14 +165,8 @@ install_man: $(MAN)/suck.1 $(MAN)/rpost.1 $(MAN)/testhost.1 $(MAN)/lmove.1
 	$(INSTALL_DATA) $(MAN)/testhost.1 $(mandir)/testhost.$(manext)
 	$(INSTALL_DATA) $(MAN)/lmove.1 $(mandir)/lmove.$(manext)
 
-install_jman: $(JMAN)/suck.1J $(JMAN)/rpost.1J $(JMAN)/testhost.1J $(JMAN)/lpost.1J
-	$(MAKE) -C $(JMAN)
-
-install_sman: $(SMAN)/suck.1 $(SMAN)/rpost.1 $(SMAN)/testhost.1 $(SMAN)/lpost.1
-	$(MAKE) -C $(SMAN)
-
-install_iman: $(IMAN)/suck.1 $(IMAN)/rpost.1 $(IMAN)/testhost.1 $(IMAN)/lpost.1
-	$(MAKE) -C $(IMAN)
+#install_sman: $(SMAN)/suck.1 $(SMAN)/rpost.1 $(SMAN)/testhost.1 $(SMAN)/lpost.1
+#	$(MAKE) -C $(SMAN)
 
 install_lpost: lpost $(MAN)/lpost.1
 	- strip -s lpost
@@ -163,8 +178,20 @@ installall: install install_lpost
 clean:
 	rm -f `find . \( -name "*.o" -o -name "*[~%]" \) -print`
 
+chkhistory_db.o: chkhistory_db.c
+	$(CC) -c $(DB_INC_LOC) $(CFLAGS) $(DBZ_GCC_FLAGS) $(CPPFLAGS) $(DEFS) $(DB_TYPE) $<
+
+killfile.o: killfile.c
+	$(CC) -c $(CFLAGS) $(DBZ_GCC_FLAGS) $(CPPFLAGS) $(DEFS) $(PERL_DEFS) $(PERL_INC_LOC) $<
+
+killprg.o: killprg.c
+	$(CC) -c $(CFLAGS) $(DBZ_GCC_FLAGS) $(CPPFLAGS) $(DEFS) $(PERL_DEFS) $(PERL_INC_LOC) $<
+
+rpost.o: rpost.c
+	$(CC) -c $(CFLAGS) $(DBZ_GCC_FLAGS) $(CPPFLAGS) $(DEFS) $(PERL_DEFS) $(PERL_INC_LOC) $<
+
 .c.o: 
-	$(CC) -c $(CFLAGS) $(DB_INC_LOC) $(GCC_FLAGS) $(CPPFLAGS) $(DEFS) $< 
+	$(CC) -c $(CFLAGS) $(GCC_FLAGS) $(CPPFLAGS) $(DEFS) $< 
 
 #---------------------------------------------------------------------------
 # stuff to make sure configure is up to date (I hope)
@@ -203,7 +230,7 @@ profile: moreclean
 cleanrun: 
 	rm -rf Msgs
 	rm -f suck.errlog suck.status suck.newrc suck.index suck.sorted suck.post \
-        suck.restart suck.lock suck.killlog debug.* gmon.out batch *.tmp
+        suck.restart suck.lock suck.killlog debug.* gmon.out batch *.tmp core
 
 moreclean: clean cleanrun 
 	rm -f suck rpost testhost lpost makephrases lmove
@@ -211,11 +238,10 @@ moreclean: clean cleanrun
 distclean: clean cleanrun cleanconfig moreclean
 	rm -rf test
 	rm -f sucknewsrc sucknewsrc.old suckkillfile suckothermsgs batch \
-        phrases.engl active active.old active-ignore
+        phrases.engl active active.old active-ignore suckxover
 
 cleanconfig:
-	rm -f Makefile Japanese.docs/Makefile Italian.docs/Makefile \
-        Spanish.docs/Makefile config.h config.cache config.status config.log
+	rm -f Makefile Spanish.docs/Makefile config.h config.cache config.status config.log
 
 maketar: phrases.h distclean
 	tar -czv -f ../$(PKGNAME)-$(VERSION).tar.gz -C .. suck-$(VERSION)

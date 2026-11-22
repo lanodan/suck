@@ -293,11 +293,3 @@ int move_file(const char *src, const char *dest) {
 	}
 	return retval;
 }
-
-
-
-
-
-
-
-

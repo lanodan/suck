@@ -303,6 +303,9 @@ int post_one_msg(PMaster master, int sockfd, char *msg) {
 		if(msgid[len-1] == '\n') {
 			msgid[len-1] = '\0';
 		}
+		if(master->debug == TRUE) {
+			do_debug("File Name = \"%s\"\n", msg);
+		}
 		
 		if((fpi = fopen(msg, "r")) == NULL) {
 			MyPerror(msg);
@@ -321,6 +324,10 @@ int post_one_msg(PMaster master, int sockfd, char *msg) {
 					do_debug("got answer: %s", resp);
 				}
 				number(resp, &nr);
+				/* added for prob */
+				if(master->debug == TRUE) {
+					do_debug("Answer=%d\n", nr);
+				}
 				if(nr == 435) {
 					error_log(ERRLOG_REPORT, batch_phrases[11], msgid, resp, NULL);
 					do_unlink = TRUE;
@@ -332,6 +339,11 @@ int post_one_msg(PMaster master, int sockfd, char *msg) {
                                         /* send the article */
 					longline = FALSE;
 					while(fgets(linein, MAXLINLEN, fpi) != NULL) {
+						/* added for prob */
+						if(master->debug == TRUE) {
+							do_debug("sending line-%s--\n", linein);
+						}
+						
 						len = strlen(linein);
 						if(longline == FALSE && linein[0] == '.') {
 							/* double the . at beginning of line */
@@ -352,6 +364,10 @@ int post_one_msg(PMaster master, int sockfd, char *msg) {
 					}
 					/* end the article */
 					sputline(sockfd, ".\r\n");
+					/* put in for prob */
+					if(master->debug == TRUE) {
+						do_debug("Finished sending article\n");
+					}
 					if(sgetline(sockfd, &resp) < 0 ) {
 						retval = RETVAL_ERROR;
 					}

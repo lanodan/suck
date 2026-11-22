@@ -11,9 +11,19 @@
 #ifdef HAVE_SYS_WAIT_H
 #include <sys/wait.h>
 #endif
+
 #include "suck_config.h"
 #include "both.h"
 #include "phrases.h"
+
+#ifdef PERL_EMBED
+#include <EXTERN.h>
+#include <perl.h>
+#ifndef ERRSV
+# define ERRSV (GvSV(errgv))  /* needed for perl 5.004 and earlier */
+# define PL_na (na)
+#endif
+#endif
 
 struct nntp_auth {
 	char *userid;
@@ -34,6 +44,9 @@ typedef struct {
 	FILE *status_fptr;
 	unsigned short int portnr;
 	const char *phrases;
+#ifdef PERL_EMBED
+	PerlInterpreter *perl_int;
+#endif
 } Args, *Pargs;
 
 /* function declarations */
@@ -46,6 +59,11 @@ int scan_args(Pargs, int, char *[]);
 void log_fail(char *, char *);
 void load_phrases(Pargs);
 void free_phrases(void);
+#ifdef PERL_EMBED
+int do_perl(int, Pargs);
+void parse_perl(Pargs, char *);
+void perl_done(Pargs);
+#endif
 
 /* stuff needed for language phrases */
 	/* set up defaults */	
@@ -54,7 +72,11 @@ char **both_phrases = default_both_phrases;
 
 enum { RETVAL_ERROR = -1, RETVAL_OK, RETVAL_ARTICLE_PROB, RETVAL_NOAUTH, RETVAL_UNEXPECTEDANS};
 /*------------------------------------------------*/
+#ifdef PERL_EMBED
+int main(int argc, char *argv[], char *env[]) {
+#else
 int main(int argc, char *argv[]) {
+#endif
 	char *inbuf;
 	int sockfd, response, retval, loop, fargc, i;
 	struct hostent *hi;
@@ -81,6 +103,9 @@ int main(int argc, char *argv[]) {
 	myargs.host = getenv("NNTPSERVER");		/* the default */
 	myargs.phrases = NULL;
 	myargs.debug = FALSE;
+#ifdef PERL_EMBED
+	myargs.perl_int = NULL;
+#endif
 
 	/* have to do this next so if set on cmd line, overrides this */
 #ifdef N_PHRASES		/* in case someone nukes def */
@@ -201,6 +226,11 @@ int main(int argc, char *argv[]) {
 				/* do one article from stdin */
 				retval = do_article(sockfd, stdin, myargs.status_fptr,&(myargs.auth), myargs.debug);
 			}
+#ifdef PERL_EMBED
+			else if(myargs.perl_int != NULL) {
+				retval = do_perl(sockfd, &myargs);
+			}
+#endif
 			else {
 				/* batch mode */
 				retval = do_batch(sockfd, &myargs);
@@ -299,6 +329,9 @@ int do_article(int sockfd, FILE *fptr, FILE *sptr, struct nntp_auth *authp, int 
 						dupeyn = TRUE;
 					}		
 				}
+				else if (strstr(inbuf, RPOST_DUPE_STR) != NULL) {
+					dupeyn = TRUE;
+				}
 			}
 			if(dupeyn == TRUE) {
 				print_phrases(sptr, rpost_phrases[6], NULL);
@@ -314,7 +347,7 @@ int do_article(int sockfd, FILE *fptr, FILE *sptr, struct nntp_auth *authp, int 
 /*--------------------------------------------------------------------------------*/
 int do_batch(int sockfd, Pargs myargs) {
 
-	int i, x, loop, argon, infilenr, nrdone, nrok, retval = 0;
+	int i, x, loop, argon, infilenr, nrdone, nrok, retval;
 	FILE *fpi_batch, *fpi_msg;
 	char buf[MAXLINLEN+1], file[MAXLINLEN+1];
 	char *infile, *outfile, *ourargs[RPOST_MAXARGS];
@@ -664,6 +697,17 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 					loop = argc;		/* terminate main loop */
 				}
 				break;
+#ifdef PERL_EMBED
+			  case 'F': /* filter using embedded perl */
+				if(loop+1 == argc) {
+					error_log(ERRLOG_REPORT, rpost_phrases[33], NULL);
+				}
+				else {
+					/* parse the perl filter */
+					parse_perl(myargs, argv[++loop]);
+				}
+				break;
+#endif	  
 			  case 'e':	/* use default error log path */
 				error_log(ERRLOG_SET_FILE, ERROR_LOG,NULL);
 				break;
@@ -673,7 +717,7 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 					retval = RETVAL_ERROR;
 				}
 				else {
-					error_log(ERRLOG_SET_FILE, argv[++loop]);
+					error_log(ERRLOG_SET_FILE, argv[++loop], NULL);
 				}
 				break;
 		  	  case 's':	/* use default status log path */
@@ -739,6 +783,8 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 				break;
 			  case 'D':	/* debug */
 				myargs->debug = TRUE;
+				/* so error_log goes to debug too */
+				error_log(ERRLOG_SET_DEBUG, NULL, NULL);
 				break;
 #ifdef TIMEOUT
 			case 'T': /* timeout */
@@ -822,4 +868,174 @@ void free_phrases(void) {
 		}
 		
 }
+#ifdef PERL_EMBED
+/*-----------------------------------------------------------------------------------------*/
+void parse_perl(Pargs args, char *fname) {
+
+	/* this code is copied from killprg.c killperl_setup() */
+	/* which comes from PERLEMBED man page */
 	
+	char *ptr = NULL;
+	char *prgs[] = { ptr, ptr };
+	
+	if ((args->perl_int = perl_alloc()) == NULL) {
+		error_log(ERRLOG_REPORT, rpost_phrases[34], NULL);
+	}
+	else {
+		if(args->debug == TRUE) {
+			do_debug("Perl program name =%s\n", fname);
+		}
+		perl_construct(args->perl_int);
+		prgs[1] = fname;
+		if(perl_parse(args->perl_int, NULL, 2, prgs, NULL) == 0) {
+			perl_run(args->perl_int);
+		}
+		else {
+			error_log(ERRLOG_REPORT, rpost_phrases[35], fname, NULL);
+			perl_done(args);
+		}
+	} 
+}
+/*---------------------------------------------------------------------------------------*/
+void perl_done(Pargs args) {
+	/* all done, free everything up */
+	if(args->perl_int != NULL) {
+		perl_destruct(args->perl_int);
+		perl_free(args->perl_int);
+		args->perl_int = NULL;
+	}
+}
+/*-----------------------------------------------------------------------------------------*/
+int do_perl(int sockfd, Pargs myargs) {
+
+	/* this routine is similar to do_batch */
+	int i, x, nrdone, nrok, retval;
+	FILE *fpi_batch, *fpi_msg;
+	char buf[MAXLINLEN+1], file[MAXLINLEN+1];
+	char *infile, *args[2] = { NULL, NULL};
+	dSP; /* perl stack pointer */
+	SV *fname; /* used to get fname off of perl stack */
+	
+	retval = RETVAL_OK;
+	nrdone = nrok = 0;
+
+	if((fpi_batch = fopen(myargs->batch, "r")) == NULL) {
+		MyPerror(myargs->batch);
+		retval = RETVAL_ERROR;
+	}
+	else {
+		while((myargs->perl_int != NULL) && (retval != RETVAL_ERROR) && (fgets(buf, MAXLINLEN, fpi_batch) != NULL)) {
+			/* build file name */
+			if(myargs->debug == TRUE) {
+				do_debug("got linein=%s",buf);
+			}
+			
+			if(myargs->prefix == NULL) {
+				strcpy(file, buf);
+			}
+			else {
+				strcpy(file, myargs->prefix);
+				if(file[strlen(file)-1] != '/') {
+					strcat(file, "/");
+				}
+				strcat(file, buf);
+			}
+			/* strip off nl */
+			i = strlen(file);
+			if(file[i-1] == '\n') {
+				file[i-1] = '\0';
+			}
+			/* some INNs put article number on line in addition to file name */
+			/* so lets parse through string, if find a ' ' NULL terminate at */
+			/* that point */
+			for(x=0;x<i;x++) {
+				if(file[x] == ' ') {
+					file[x] = '\0';
+					x = i;	/* to break loop */
+				}
+			}
+			/* okay here have file name */
+                        /* here's where we send it to perl and get back our filename */
+                        /* we need infile to become our file name to post*/
+			/* this code comes from chk_msg_kill_perl() which uses */
+			/* both perlcall and perlembed man pages */
+			/* set up args */
+			args[0] = file;
+			infile = NULL;
+			
+			if(myargs->debug == TRUE) {
+				do_debug("Calling %s with arg %s\n", PERL_RPOST_SUB, file);
+			}
+			
+			ENTER;
+			SAVETMPS;
+			PUSHMARK(SP);
+
+			i = perl_call_argv(PERL_RPOST_SUB, G_SCALAR | G_EVAL | G_KEEPERR, args);
+
+			SPAGAIN;
+
+			if(SvTRUE(ERRSV)) {
+				error_log(ERRLOG_REPORT, rpost_phrases[36], SvPV(ERRSV,PL_na));
+				POPs;
+				perl_done(myargs);
+				retval = RETVAL_ERROR;
+			}
+			else if(i != 1) {
+				error_log(ERRLOG_REPORT, rpost_phrases[37], PERL_RPOST_SUB, NULL);
+				perl_done(myargs);
+				retval = RETVAL_ERROR;
+			}
+			else {
+				fname = POPs;
+				infile = SvPV(fname, PL_na);
+				if(myargs->debug == TRUE) {
+					do_debug("got string =%s\n", (infile == NULL) ? "NULL" : infile);
+				}
+			}
+			PUTBACK;
+			FREETMPS;
+			LEAVE;
+			
+			if(infile == NULL) {
+				error_log(ERRLOG_REPORT, rpost_phrases[11], NULL);
+				retval = RETVAL_ERROR;
+			}
+			else if((fpi_msg = fopen(infile, "r")) == NULL) {
+				/* skip to next article if infile don't exist */
+				error_log(ERRLOG_REPORT, rpost_phrases[12],NULL);
+			}
+			else {
+				retval = do_article(sockfd, fpi_msg, myargs->status_fptr, &(myargs->auth), myargs->debug);
+				fclose(fpi_msg);
+				nrdone++;
+				if(retval == RETVAL_OK) {
+					nrok++;
+				}
+				/* log failed uploads (dupe article is not a failed upload ) */
+				else if (retval == RETVAL_ARTICLE_PROB) {
+					log_fail(myargs->batch, buf);
+				}
+			}	
+		}
+		if(retval == RETVAL_ERROR) {
+			/* write out the rest of the batch file to the failed file */
+			do {
+				log_fail(myargs->batch, buf);
+			} while (fgets(buf, MAXLINLEN, fpi_batch) != NULL);
+		}	
+	 	fclose(fpi_batch);
+
+		if(retval != RETVAL_ERROR) {
+			retval = (nrok == nrdone) ? RETVAL_OK : RETVAL_ARTICLE_PROB;
+		}		
+		if(myargs->deleteyn == TRUE && retval == RETVAL_OK) {
+			unlink(myargs->batch);
+			print_phrases(myargs->status_fptr, rpost_phrases[13], myargs->batch,NULL);
+		}
+	}
+	perl_done(myargs);
+	return retval;
+}
+#endif
+

@@ -1,6 +1,5 @@
 #include <config.h>
 
-
 /* If we use history databases, then these routines will */
 /* get compiled and used.  If we don't, the routines in chkhistory.c will */
 /* be used. */
@@ -17,17 +16,36 @@
 /* These take care if user had multiple defines in makefile */
 /* use DBM if we've got it */
 #ifdef USE_DBM
+#undef USE_GDBM
 #undef USE_NDBM
 #undef USE_DBZ
+#undef USE_INN2
+#endif
+/* else if have GDBM use it */
+#ifdef USE_GDBM
+#undef USE_NDBM
+#undef USE_DBZ
+#undef USE_INN2
 #endif
 /* else if have NDBM use it */
 #ifdef USE_NDBM
 #undef USE_DBZ
+#undef USE_INN2
+#endif
+/* use DBZ if we have it */
+#ifdef USE_DBZ
+#undef USE_INN2
 #endif
 
 #ifdef USE_DBM
 #include <dbm.h>
 #define close_history() dbmclose();
+#endif
+
+#ifdef USE_GDBM
+#include <gdbm.h>
+static GDBM_FILE dbf = NULL;
+#define close_history() gdbm_close(dbf)
 #endif
 
 #ifdef USE_NDBM
@@ -44,6 +62,15 @@ static DBM *db = NULL;	/* I know this isn't too pretty, but its the easiest way 
 #define close_history() dbmclose()
 #endif
 
+#ifdef USE_INN2
+#include <sys/types.h>
+#include <configdata.h>
+#include <clibrary.h>
+#include <libinn.h>
+#include <dbz.h>
+#define close_history() dbzclose()
+#endif
+
 /* function prototypes */
 int open_history(void);
 int  check_history(char *);
@@ -53,12 +80,16 @@ void chkhistory(PMaster master) {
 	PList curr, prev;
 	int nrfound = 0;
 
+	if(master->debug == TRUE) {
+		do_debug("Opening history database: %s\n", HISTORY_FILE);
+	}
+	
 	if(open_history() != TRUE) {
 		error_log(ERRLOG_REPORT, chkh_phrases[0], HISTORY_FILE, NULL);
 	}
 	else {
 
-		print_phrases(master->msgs, chkh_phrases[6], NULL);
+		print_phrases(master->msgs, chkh_phrases[5], NULL);
 		fflush(master->msgs);	/* so msg gets printed */
 		TimerFunc(TIMER_START, 0L, NULL);
 
@@ -87,6 +118,9 @@ void chkhistory(PMaster master) {
 				}
 			}
 			else {
+				if(master->debug == TRUE) {
+					do_debug("Didn't match %s\n", curr->msgnr);
+				}
 				/* next node to check */
 				prev = curr;
 				curr = curr->next;
@@ -95,7 +129,7 @@ void chkhistory(PMaster master) {
 		TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
 
 		close_history();
-		print_phrases(master->msgs, chkh_phrases[4], str_int(nrfound), NULL);
+		print_phrases(master->msgs, chkh_phrases[3], str_int(nrfound), NULL);
 	}
 	return;
 }
@@ -109,9 +143,29 @@ int open_history(void) {
 	if(dbminit(HISTORY_FILE) >= 0) {
 		retval = TRUE;
 	}
-#else
+#endif
 
+#if defined (USE_INN2) 
+	/* first, set our options */
+	dbzoptions opt;
+
+#ifdef DO_TAGGED_HASH
+	opt.pag_incore=INCORE_MEM;
+#else
+	opt.idx_incore=INCORE_MEM;  /* per man page speeds things up */
+#endif
+	opt.exists_incore=INCORE_MEM;
+	dbzsetoptions(opt);
+	retval = dbzinit(HISTORY_FILE);
+#endif
+	
+#if defined (USE_NDBM)
 	if((db = dbm_open(HISTORY_FILE, O_RDONLY, 0)) != NULL) {
+		retval = TRUE;
+	}
+#endif
+#if defined(USE_GDBM)
+	if((dbf = gdbm_open(HISTORY_FILE, 1024, GDBM_READER,0,0)) != NULL) {
 		retval = TRUE;
 	}
 #endif
@@ -121,6 +175,7 @@ int open_history(void) {
 /*----------------------------------------------------------------*/
 int check_history(char *msgid) {
 
+#if defined (USE_DBM) || defined (USE_DBZ) || defined (USE_NDBM)
 	datum input, result;
 
 	input.dptr = msgid;
@@ -141,5 +196,21 @@ int check_history(char *msgid) {
 #endif
 
 	return (result.dptr != NULL) ? TRUE : FALSE;
+#endif /* big if defined */
 
+#if defined (USE_INN2)
+	HASH msgid_hash;
+	
+	msgid_hash=HashMessageID(msgid);	/* have to hash it first */
+	return dbzexists(msgid_hash);
+	
+#endif
+#if defined(USE_GDBM)
+	datum input;
+
+	input.dptr = msgid;
+	input.dsize = strlen(msgid)+1;
+
+	return gdbm_exists(dbf, input);
+#endif	
 }		

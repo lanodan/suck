@@ -3,42 +3,36 @@ PREFACE
 Original Author - Tim Smith (address unknown)
 Maintainers - 
 March 1995 - Sven Goldt (address unknown)
-July 1995  - Robert A. Yetman (boby@pixi.com)
+July 1995  - Robert A. Yetman (bobyetman@worldnet.att.net)
 
-Current Maintainer - boby@pixi.com
-Japanese Docs - Motoharu Kubo (mkubo@3ware.co.jp)
-Spanish Docs - Simon Mudd (sjmudd@redestb.es)
-	       Abraham Nevado (nevado@redestb.es)
+Current Maintainer - bobyetman@worldnet.att.net
 
 LOCATION
 ========
-visit http://www.pixi.com/~boby/index.html
+visit http://home.att.net/~bobyetman/index.html
 to download the latest version or view the README file.
 
 FTP Sites:
 Site1	     = sunsite.unc.edu
 Path1        = /pub/Linux/system/news/transport
-File1        = suck-3.9.0.tar.gz
-
-Site2        = tsx-11.mit.edu
-Path2        = /pub/linux/sources/sbin
-File2        = suck-3.9.0.tar.gz
+File1        = suck-3.10.1.tar.gz
 
 INTRODUCTION
 ============
-The primary use for suck is to feed a local INN or CNEWS server, without
-the remote NNTP feeding you articles.  It is designed for a small, partial
+The primary use for suck is to feed a local NNTP server, without the
+remote NNTP feeding you articles.  It is designed for a small, partial
 news feed.  It is NOT designed to feed 10,000 groups and 3 Gigs of articles
 a day.
 
 This package contains software for copying news from an NNTP server to your
-local machine, and copying replies back up to an NNTP server.
+local machine, and copying replies back up to an NNTP server.  It works
+with most standard NNTP servers, including INN, CNEWS, DNEWS, and typhoon.
 
-The suck/rpost combination allows you to run your own INN/CNEWS site, 
-controlling where you get your news, and where you post outgoing articles.
-Suck/rpost use only standard NNTP commands that are used by your favorite
-news reader (tin, xvnews, strn) such as POST and ARTICLE.  If you can use tin
-or xvnews against a NNTP site, than you can use Suck/Rpost.  
+The suck/rpost combination allows you to run your own  site, controlling
+where you get your news, and where you post outgoing articles.  Suck/rpost
+use only standard NNTP commands that are used by your favorite news reader
+(tin, xvnews, strn) such as POST and ARTICLE.  If you can use tin or xvnews
+against a NNTP site, than you can use Suck/Rpost.  
 
 suck			Pull a small newsfeed from an NNTP server
 
@@ -49,77 +43,57 @@ rpost			Posts article(s) to a remote NNTP server
 testhost        	Check to see what commands your host recognizes or
 			get the active or new list.
 
-lmove * NEW *		put articles in news/group/number format.
+lmove 			put articles in news/group/number format.
 
-MAJOR CHANGES FROM 3.8.0 -> 3.9.0
-=================================
+MAJOR CHANGES FROM 3.10.-> 3.10.1
 
-* All packages.  Fixed the problem with Linux/Glibc and possibly SCO systems.
-You shouldn't need the _POSIX_SOURCE and _BSD_SOURCE any more in config.h
+* suck - bug fixes in the GDBM code, the XOVER code, and the embedded
+	Perl code if using perl 5.004 or older.
 
-* Suck 
-	
-- added -AL option.  This option reads the activelist from a local file,
-instead of the localhost.  This is handy if you don't run an NNTP server.
+* rpost - added embedded perl filter capability.
 
-- added -z option.  This option causes suck to skip the dedupe phase.
-Useful only on slow machines where it takes longer to dedupe than to
-download the messages. Not recommended.
+MAJOR CHANGES FROM 3.9.4 -> 3.10.0
 
-- added -x option.  Another Kludge to help those poor souls who have
-to use M$News server.  This option tells suck to skip the check for
-a > on the MsgID, since M$ truncates the MsgID to 72 characters, and 
-the closing > may not always be there.   Warning- this may affect the
-deduping, since I don't have the entire MsgID to go by, I may decide
-that two articles are dupes, when they may not be.
+* suck - suck has a new form of killfiles, based on the XOVER command.
+	The key difference with these killfiles is that they are 
+	processed before downloading the articles.  They use the same
+        syntax as the old killfiles.  See README.Xover for more details.
 
-- modified the code that reads the body of the articles, again in response
-to a problem with the M$News server.  It allows NULLS in its articles,
-so I had to deal with them.  
+* suck - added code to allow you to define your own perl function
+	for killing messages, similar to the kill program routines.
+	If you're using an external filter, you'll want to consider
+	using this instead, as it's much faster.
+	See suck's man page for details.
 
-- added -B option.  This option causes suck to batch up any messages
-that may be left in its data directory, possibly from a failed attempt,
-before starting a new download.  There are some gotchas with this, read
-the man page.
+* suck - added compile time option for use of GDBM for the chkhistory
+	routines.
 
-- massive internal changes to the killfile code.  This was necessitated by
-the addition of three new killfile parameters, BODY, BODYSIZE> and BODYSIZE<,
-to kill messages based on text in the body or the size of the body.  Added
-code to handle multiple HEADER: and BODY: lines in killfile.
-See man
-pages for details on these two parameters.  
+* suck - added -G option.  This changes the format of the BPS and count
+	output, to enable an external program, such as a GUI to parse.
+	See README.Gui for more details.
 
-* Testhost
+* suck - added -f option.  This option forces a reconnect after deduping
+	of messages, and before downloading the messages.  This is in
+	case deduping takes some time, and the remote end times out.
 
-- added -q option to supress opening connection messages.  Using this
-option with the -a option will create an active list suitable for use
-by most servers.
+* suck - added code to cause error messages to go to debug.suck, if -D 
+	selected.
 
-* Lmove
+* suck - added code to handle INN history lines beginning with [.
 
-- swapped the highnr and lownr numbers in the param file, to make it
-look like a real active file.
+* suck - various fixes so code compiles on BEos and SunOS.
 
-* Rpost
+* suck - added some tests so that if killfiles evaluate to empty,
+	we throw them out.
 
-- fixed bug which caused coredump if time out on upload of message.
-
-* All programs 
-
-- Added a version number to the phrase file.  This is to prevent using
-an outdated phrase file.  Its basically the current version number of
-suck.  Run 'make phrases' to see what it looks like.  While doing this,
-I fixed some minor bugs in the loading of phrases that caused the wrong
-set of phrases to be loaded.
-
-- Various bug fixes, code tightening, more tests to make sure everything
-is going okay.  See CHANGELOG for the gory details.
-
+* testhost - added -o option to run "list overview.fmt", to see
+	what XOVER command returns, and the -M option, in case
+	you need to run "mode reader" prior to the -o option.
 
 MAILING LIST!
 =============
-Thanks to Motoharu Kubo (mkubo@3ware.co.jp), there is now a mailing list
-for suck.  It is intended as a place to discuss problems, etc, plans, and
+Thanks to Motoharu Kubo (mkubo@3ware.co.jp), there is a mailing list for
+suck.  It is intended as a place to discuss problems, etc, plans, and
 other issues related to suck.  Its address is "suck-ml@3ware.co.jp".
 
 To subscribe to the mailing list, send a mail message to majordomo@3ware.co.jp
@@ -138,16 +112,21 @@ to get that, why not just build gcc? :)
 The Makefile assumes you are using GNU make, other makes may or may not work.
 
 If your remote INN server slows drastically after 100 messages are downloaded,
-and they are using INN 1.5.1, chances are they compiled INN with "LIKE_PULLERS"
-set to DONT, which causes INN to put a small sleep before each message.  
+and they are using INN 1.5.1 or newer, chances are they compiled INN with 
+"LIKE_PULLERS" set to DONT, which causes INN to put a small sleep before each message.  
 Talk to the SA for the system and see if they'll compile with "DO".  Chances
 are they didn't even know this option existed.
 
-If you don't feel like going to the trouble of running INND/CNEWS/DNEWS, and
+If you don't feel like going to the trouble of running INND/CNEWS/DNEWS/Typhoon, and
 you don't need a full blown NNTP daemon running, then suck, along with tin
 and a few batch files, can be used to read articles.  The scripts should be
-available from <http://poboxes.com/rdebath>.  I don't use these, but supposedly
+available from http://poboxes.com/rdebath.  I don't use these, but supposedly
 they do work.
+
+Is suck Y2K compliant?  As far as I can make it yes.   The only program that uses
+dates is testhost, and the date is sent to the remote NNTP host for the NEWGRP
+command.  I don't do any date calculations.   Once servers take an 8 digit 
+date (right now its YYMMDD), I'll update testhost.
 
 HOW-TO-USE
 ==========
@@ -156,32 +135,20 @@ HOW-TO-USE
     /usr/lib/news/history, edit the top of the Makefile.
 3.  Edit suck_config.h - lots of configurable stuff here
 4.  Make it.  (make , make install)
-5.  Create a sucknewsrc - which groups to download (see suck man pg).
+5.  READ THE MAN PAGES.
+6.  Create a sucknewsrc - which groups to download (see suck man pg).
 	If you have INND/CNEWS/DNEWS/PNEWS already running, then
-	just use the -A -hl localhost option, and the sucknewsrc
-	will be built for you.
-6.  Take a look at sample/get.news(.innxmit or .rnews)
+	just use 'suck remotehost -A -hl localhost', and the sucknewsrc
+	will be built for you.  However, you might want to read the
+	man page, and create a suck.ignore file first.
+7.  Take a look at sample/get.news(.innxmit or .rnews)
 	These scripts show the whole scheme, from sucking news to
 	posting replies to your remote host.  Use .innxmit if you
 	are using INND, or .rnews if you are using CNEWS.
-7.  READ THE MAN PAGES
-
-8.  To install supplemental language man pages and phrase file 
-	make install_jman		Japanese language docs
-	make install_sman		Spanish language docs
 
 PLANS FOR NEXT VERSION.
 =======================
 
-1. Add a faster non-regex search to killfile code.
-
-2. Go thru and make all killfile stuff handle NULLs in body/header.
-This will mean changing strstr() to something else.
-
-3. Add a switch to killfile code to allow by-pass of regex and force
-non-regex search.
-
 FUTURE PLANS.
 ========================
-1. pipelining when using killfiles (still haven't figured out how to
-	code this gracefully).
+I'm open to suggestions.

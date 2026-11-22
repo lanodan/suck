@@ -1,4 +1,4 @@
-.\" $Revision: 1.1 $
+.\" $Revision: 3.10.0 $
 .TH TESTHOST 1
 .SH NAME
 testhost - test the status of an NNTP news server
@@ -8,6 +8,10 @@ testhost - test the status of an NNTP news server
 [
 .BI -a | -n
 date time
+.BI | -o
+]
+[
+.BI -M
 ]
 [
 .BI -s | -S
@@ -47,17 +51,11 @@ timeout
 .SH OPTIONS
 -a     Get the active list from hostname
 
--n date time     Get the newgroups created on the host since the date and
-time specified. The date must be in YYMMDD format and the time must be in
-HHMMSS format.
+\-d
 
--s | -S filename
-
-These options will send all status messages (normally displayed on stdout), to
-an alternate file.  The lower case version, -s, will send the status messages
-to the compiled-in default defined in suck_config.h.  The default is /dev/null,
-so no status messages will be displayed.  The upper case version, -S, requires
-the filename parameter.  All status messages will then be sent to this file.
+This option tells testhost get the descriptions of the newsgroups on the
+remote server by sending the 'list newsgroups' command.  The remote server
+may or may not support this command.
 
 -e | -E filename
 
@@ -67,18 +65,6 @@ to the compiled-in default defined in suck_config.h.  The default is suck.errlog
 The upper case version, -E, requires the filename parameter.  All error messages
 will then be sent to this file.
 
--N port_number
-
-This option will tell testhost to use an alternate NNRP port number when connecting
-to the host, instead of the default, 119.
-
--U userid
-
--P password
-
-These two options let you specify a userid and password, if your NNTP server
-requires them.
-
 \-l phrase_file
 
 This option tells testhost to load in an alternate phrase file, instead of using
@@ -86,18 +72,41 @@ the built-in messages.  This allows you to have testhost print phrases in anothe
 language, or to allow you to customize the messages without re-building.
 See the "FOREIGN LANGUAGE PHRASES" in suck.1 for more details.
 
+-n date time     
+
+Get the newgroups created on the host since the date and
+time specified. The date must be in YYMMDD format and the time must be in
+HHMMSS format.
+
+-N port_number
+
+This option will tell testhost to use an alternate NNRP port number when connecting
+to the host, instead of the default, 119.
+
+\-q 
+
+This option tells testhost to not display the connection and announcement messages,
+rather only display the results of the actual command run.
+
+-s | -S filename
+
+These options will send all status messages (normally displayed on stdout), to
+an alternate file.  The lower case version, -s, will send the status messages
+to the compiled-in default defined in suck_config.h.  The default is /dev/null,
+so no status messages will be displayed.  The upper case version, -S, requires
+the filename parameter.  All status messages will then be sent to this file.
+
 \-T
+
 This option overrides the compiled-in TIMEOUT value. This is how long testhost
 waits for data from the remote host before timing out and aborting.
 
-\-d
-This option tells testhost get the descriptions of the newsgroups on the
-remote server by sending the 'list newsgroups' command.  The remote server
-may or may not support this command.
+-U userid
 
-\-q 
-This option tells testhost to not display the connection and announcement messages,
-rather only display the results of the actual command run.
+-P password
+
+These two options let you specify a userid and password, if your NNTP server
+requires them.
 
 .SH DESCRIPTION
 .I Testhost
@@ -114,7 +123,15 @@ option is used, testhost will display the server's
 active history list.  If the 
 .I -n date time
 option is used, testhost will display all new groups created on the server
-since the date and time specified.
+since the date and time specified.  If the
+.I -o
+option is used, then testhost will display the overview format, which is
+what the XOVER command returns.
+.PP
+If the
+.I -M
+option is used, the command will be preceded with the "mode reader" command,
+which might be needed by some servers.
 .SH EXIT VALUES
 0 on success, -1 on failure.
 .de R$

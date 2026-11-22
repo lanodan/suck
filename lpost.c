@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <errno.h>	
+#include <string.h>
 #include "suck_config.h"
 
 /* get news data from stdin and post it to the local server */

@@ -33,7 +33,11 @@ const char *default_rpost_phrases[] = {
 	"Invalid argument: %v1%, ignoring\n", /* 30 */
 	"No language file specified\n",
 	"No userid or password provided, unable to auto-authenticate",
-					
+	"No Perl script supplied, ignoring\n",
+	"Perl set up- out of memory, ignoring\n",
+	"Perl - error parse file %v1%, ignoring\n", /* 35 */
+	"Perl - evaluation error %v1%, aborting\n",
+	"Perl - invalid nr of return values, %v1%, aborting\n",
 };
 
 int nr_rpost_phrases = sizeof(default_rpost_phrases)/sizeof(default_rpost_phrases[0]);

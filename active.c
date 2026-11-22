@@ -9,6 +9,10 @@
 #include <unistd.h>
 #endif
 
+#ifdef HAVE_REGEX_H
+#include <regex.h>
+#endif
+
 #include "suck_config.h"
 #include "both.h"
 #include "suck.h"
@@ -28,10 +32,14 @@ typedef struct Dactive {
 typedef struct Dignore {
 	char *group;
 	struct Dignore *next;
+#ifdef HAVE_REGEX_H
+	regex_t match;
+	int use_regex;
+#endif
 } Ignore, *Pignore;
 
 /* local function prototypes */
-int add_to_list(Pactive *, const char *, Pignore);
+int add_to_list(Pactive *, const char *, Pignore, int);
 int get_msgids(PMaster, Pactive);
 Pignore  read_ignore(PMaster);
 void do_free(Pactive, Pignore);
@@ -111,7 +119,7 @@ Pactive nntp_active(PMaster master, Pignore ignorehead) {
 							do_debug("Got groupline: %s", resp);
 						}
 						if(resp[0] != '.' ) {	
-							retval = add_to_list(&listhead, resp, ignorehead);
+							retval = add_to_list(&listhead, resp, ignorehead,master->debug);
 						}
 					}
 					else {
@@ -150,7 +158,7 @@ Pactive read_active(PMaster master, Pignore ignorehead) {
 				do_debug("Got line: %s", linein);
 			}
 			
-			retval = add_to_list(&listhead, linein, ignorehead);
+			retval = add_to_list(&listhead, linein, ignorehead, master->debug);
 		}
 		fclose(fpi);
 		if(retval != RETVAL_OK) {
@@ -186,13 +194,17 @@ int connect_local(PMaster master) {
 	return fd;
 }
 /*----------------------------------------------------------------------------*/
-int add_to_list(Pactive *head, const char *groupline, Pignore ignorehead) {
+int add_to_list(Pactive *head, const char *groupline, Pignore ignorehead, int debug) {
 	
 	/* add one group to group list */
 	Pactive temp, tptr;
 	Pignore pignore;
 	int len, retval= RETVAL_OK;
 	char postyn;
+	
+#ifdef HAVE_REGEX_H
+	int reg_match;
+#endif
 	
 	len = 0;
 	/* get length of group name */
@@ -215,15 +227,46 @@ int add_to_list(Pactive *head, const char *groupline, Pignore ignorehead) {
 		strncpy(temp->group, groupline, len);
 		temp->group[len] = '\0'; /* NULL terminate it */
 		
-		sscanf(groupline, "%*s%*d%*d%c", &postyn);
+		sscanf(groupline, "%*s%*ld%*ld%c", &postyn);
 		temp->postyn = (postyn == 'n') ? FALSE : TRUE;
 
 		/* now check to see if we ignore this group, if so, don't add to list */
 		/* we have to wait until here, because only now do we have the group */
 		/* name in a separate field we can compare to the ignore list */
 		pignore = ignorehead;
+#ifndef HAVE_REGEX_H
 		while(pignore != NULL && strcmp(pignore->group, temp->group) != 0) {
 			pignore = pignore->next;
+		}
+#else
+		reg_match = FALSE;
+		
+		while(pignore != NULL && reg_match == FALSE) {
+			if(pignore->use_regex == FALSE) {
+				if(strcmp(pignore->group, temp->group) == 0) {
+					reg_match = TRUE;
+				}
+				else {
+					pignore = pignore->next;
+				}
+			}
+			else {
+				if(regexec(&(pignore->match),temp->group, 0, NULL, 0) == 0) {
+					reg_match = TRUE;
+				}
+				else {
+					pignore = pignore->next;
+				}
+			}
+		}
+#endif
+		if(debug == TRUE ) {
+			if(pignore == NULL) {
+				do_debug("Adding to active list - %s\n",temp->group);
+			}
+			else {
+				do_debug("Ignoring Group %s - match on %s\n",temp->group, pignore->group);
+			}
 		}
 		if(pignore == NULL) {
 			/* we didn't match, add to list */
@@ -278,7 +321,8 @@ int get_msgids(PMaster master, Pactive head) {
 	/* then download msgids and write it out to the new.sucknewsrc */
 	
 	FILE *oldrc, *newrc;
-	int retval = RETVAL_OK, nrread, lastread, maxread;
+	int retval = RETVAL_OK, nrread, maxread;
+	long lastread;
 	char buf[MAXLINLEN+1], group[512], *ptr;
 	Pactive plist;
 	
@@ -307,7 +351,7 @@ int get_msgids(PMaster master, Pactive head) {
 			
 			}
 			maxread = -1; /* just in case */
-			nrread = sscanf(ptr, "%s %d %d\n", group, &lastread, &maxread);
+			nrread = sscanf(ptr, "%s %ld %d\n", group, &lastread, &maxread);
 			if(nrread < 2 || nrread > 3) {
 				/* totally ignore any bogus lines */
 				print_phrases(master->msgs, active_phrases[3], buf, NULL);
@@ -325,7 +369,7 @@ int get_msgids(PMaster master, Pactive head) {
 				/* valid group, lets get em */
 					if(plist->postyn == FALSE) {
 						/* we can't post, comment the line out */
-						fprintf(newrc, "# %s %d", group, lastread);
+						fprintf(newrc, "# %s %ld", group, lastread);
 						if(maxread >= 0) {
 							fprintf(newrc, " %d", maxread);
 						}
@@ -333,7 +377,7 @@ int get_msgids(PMaster master, Pactive head) {
 					}
 					else if(maxread == 0) {
 						/* just rewrite the line */
-						fprintf(newrc,"%s %d %d\n", group, lastread, maxread);
+						fprintf(newrc,"%s %ld %d\n", group, lastread, maxread);
 					}
 					else {
 						retval = do_one_group(master, buf, group, newrc, lastread, maxread);
@@ -368,7 +412,7 @@ int get_msgids(PMaster master, Pactive head) {
 				lastread = ACTIVE_DEFAULT_LASTREAD;
 				maxread = 0;
 				
-				sprintf(buf,"%s %d\n", plist->group, lastread);
+				sprintf(buf,"%s %ld\n", plist->group, lastread);
 
 				print_phrases(master->msgs, active_phrases[10], plist->group, NULL);
 				
@@ -400,8 +444,14 @@ Pignore read_ignore(PMaster master) {
 	char buf[MAXLINLEN+1], *ptr;
 	int errflag = FALSE;
 	
-	head = last = NULL;
+#ifdef HAVE_REGEX_H
+	int err;
+	char errmsg[256];
+	int i;
+#endif
 
+	head = last = NULL;
+	
 	/* first check if one with postfix is present, if not, use non postfix version */
 	fpi = fopen(full_path(FP_GET, FP_DATADIR, N_ACTIVE_IGNORE), "r");
 	if(fpi == NULL) {
@@ -440,6 +490,32 @@ Pignore read_ignore(PMaster master) {
 					last->next = temp;
 				}
 				last = temp;
+#ifdef HAVE_REGEX_H
+				/* first add ^ and $ so  that we don't match */
+				/* partials unless they have wild cards */
+				if(buf[0] != '^') {
+					buf[0] = '^';
+					strcpy(&buf[1], temp->group);
+				}
+				else {
+					strcpy(buf,temp->group);
+				}
+				i = strlen(buf);
+				if(buf[i-1] != '$') {
+					buf[i] = '$';
+					buf[i+1] = '\0';
+				}
+				
+                                /* now regcomp it for later comparision */
+				temp->use_regex = TRUE;
+				if((err = regcomp(&(temp->match), buf, REG_NOSUB | REG_ICASE | REG_EXTENDED)) != 0) 
+				{
+					regerror(err, &(temp->match), errmsg, sizeof(errmsg));
+					error_log(ERRLOG_REPORT, active_phrases[12], buf, errmsg, NULL);
+					temp->use_regex = FALSE;
+				}
+				
+#endif
 			}
 		}
 		fclose(fpi);
