@@ -1,5 +1,5 @@
 .\" Traduzione italiana di Giuseppe De Marco <gdm@rebel.net>
-.\" 4 Ottobre 1996 - Ultima modifica: 4 Novembre 1996
+.\" 4 Ottobre 1996 - Ultima modifica: 15 Marzo 1997
 
 .\" $Revision: 1.5 $
 .TH RPOST 1
@@ -47,6 +47,10 @@ password
 [
 .BI \-N
 port_number
+]
+[
+.BI \-l
+phrase_file
 ]
 [
 .BI -f
@@ -105,6 +109,12 @@ quando si connette all'host, invece del numero di porta di default, 119.
 Questa opzione dice ad rpost di leggere altre opzioni da un file, in aggiunta
 alla linea di comando.
 
+\-l phrase_file
+
+Questa opzione dice ad rpost di caricare un file delle frasi alternativo, invece
+di usare i messaggi built-in.  Questo permette di avere rpost che stampa le frasi
+in un'altra lingua, o permette di customizzare i messaggi senza ricompilare.
+Vedere "FRASI IN UNA LINGUA STRANIERA" in suck.1 per ulteriori dettagli.
 
 .SH MODO STDIN
 rpost
@@ -172,19 +182,20 @@ directory di base /usr/spool/news.  In quel caso usare appunto:
 
 In molti casi, ogni article deve essere "ritoccato" prima che l'NNTP
 remoto lo accetti.  Questa opzione permette di farlo.
-Ci sono due parametri obbligatori:
+Ci sono tre parametri obbligatori:
 
 $$o=<outfile>	- <outfile> è il nome del file prodotto dal vostro
 filtro che verrà uploadato al server NNTP remoto.
 Questo argomento NON viene passato al vostro programma di filtro, e
 può essere specificato dovunque nella linea di comando DOPO l'argomento
-di filtro -f.
+di filtro -f, sia prima del nome del filtro, sia dopo.
 
-$$i - Quando rpost chiamerà il vostro filtro, sostituirà $$i con il
-nome del file dell'article da ritoccare.
+filter - nome del programma da chiamare.  Tutto ciò che segue filter,
+TRANNE il $$o, sono argomenti passati al filtro.
 
 arg1 - Il primo argomento al vostro programma/script di filtro.  Esso
-molto probabilmente sarà $$i
+molto probabilmente sarà $$i, che rpost riempie con il nome dell'article
+che ha bisogno di essere pulito.
 
 arg2 ... - possono essere specificati eventuali argomenti addizionali necessari.
 
@@ -203,22 +214,30 @@ sed -e "/^NNTP-Posting-Host/d" $1 > $2
 .PP
 quindi chiamiamo rpost in un modo tipo questo:
 .RS
-rpost -b /usr/spool/news/out.going/pixi -f myscr \\$\\$o=/tmp/FILTERED_MSG \\$\\$i /tmp/FILTER_MSG
+rpost -b /usr/spool/news/out.going/pixi -f myscr \\$\\$o=/tmp/FILTERED_MSG \\$\\$i /tmp/FILTERED_MSG
 .RE
 
 Allora, prima che ogni article venga uploadato, myscr viene chiamato più o meno
 così:
 .RS
-myscr infilename /tmp/FILTER_MSG
+myscr infilename /tmp/FILTERED_MSG
 .RE
 
 Dopo che myscr termina, rpost uploada al server NNTP
-remoto l'article ripulito, conservato in /tmp/FILTER_MSG.
+remoto l'article ripulito, conservato in /tmp/FILTERED_MSG.
 .SH NOTA:
 $$o e $$i devono essere escaped, usando o le barre inverse
 come sopra, o gli apici, per evitare che la shell provi ad
 interpretarli come variabili.  Se non si effettua bene l'escaping
 rpost non funzionerà!
+
+.SH AVVERTIMENTO:
+
+Prestare molta attenzione a cosa il programma di filtro cancella dall'article.
+Cancellare la linea sbagliata può avere cattivi effetti in seguito.  Per
+esempio, non cancellare la linea MSG-ID, in quanto potrebbe far postare
+tante volte lo stesso messaggio, in base alla configurazione di entrambi
+i news server locale e remoto.
 
 .SH FILE DI ARGOMENTI PER RPOST
 .PP

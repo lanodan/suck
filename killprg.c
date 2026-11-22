@@ -17,7 +17,6 @@
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
-#include <sys/types.h>
 #endif
 
 #ifdef HAVE_SYS_WAIT_H
@@ -35,6 +34,7 @@
 #endif
 
 #include <string.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/param.h>
 
@@ -43,6 +43,7 @@
 #include "suck.h"
 #include "suckutils.h"
 #include "killfile.h"
+#include "phrases.h"
 
 #ifdef MYSIGNAL
 #include <signal.h>
@@ -79,7 +80,7 @@ int killprg_forkit(PKillStruct mkill, char *args) {
 	i = strlen(args);
 	/* do this so can muck around with string with messing up original */
 	if((myargs = malloc(i+1)) == NULL) {
-		error_log(ERRLOG_REPORT, "Out of Memory processing Killprg args");
+		error_log(ERRLOG_REPORT, killp_phrases[0], NULL);
 	}
 	else {
 		strcpy(myargs, args);
@@ -121,7 +122,7 @@ int killprg_forkit(PKillStruct mkill, char *args) {
 			}
 		}
 		if(retval == FALSE) {
-			MyPerror("Setting Up Pipes");
+			MyPerror(killp_phrases[1]);
 		}
 		else {
 #ifdef MYSIGNAL
@@ -141,7 +142,7 @@ int killprg_forkit(PKillStruct mkill, char *args) {
 			}
 			else if( mkill->child.Pid == -1) {
 			  	/* whoops */
-				MyPerror("fork");
+				MyPerror(killp_phrases[3]);
 				retval = FALSE;
 				/* close down all the pipes */
 				close(newstdin[0]);
@@ -182,7 +183,7 @@ int find_in_path(char *prg) {
 			len = strlen(ptr)+1;
 			/* now have to copy the environment, since I can't touch the ptr */
 			if((mypath = malloc(len)) == NULL) { 
-				error_log(ERRLOG_REPORT, "Out of Memory Processing Path");
+				error_log(ERRLOG_REPORT, "%s %s", killp_phrases[2], NULL);
 			}
 			else {
 				strcpy(mypath, ptr);
@@ -222,7 +223,7 @@ int find_in_path(char *prg) {
 		}
 	}
 	if(retval == FALSE) {
-		error_log(ERRLOG_REPORT, "%s: Unable to find, sorry", prg);
+		error_log(ERRLOG_REPORT, killp_phrases[3], prg, NULL);
 	}
 	return retval;
 }
@@ -247,15 +248,15 @@ int chk_msg_kill_fork(PKillStruct pkill, char *header) {
 #endif
 		sprintf(len, "%-*d\n", KILLPRG_LENGTHLEN-1, y);
 		if(write(pkill->child.Stdin, len, KILLPRG_LENGTHLEN) <= 0) {
-			error_log(ERRLOG_REPORT, "Unable to write to child process");		
+			error_log(ERRLOG_REPORT,  killp_phrases[4], NULL);		
 		}
 		/* then write the actual header */
 		else if(write(pkill->child.Stdin, header,y) <= 0) {
-			error_log(ERRLOG_REPORT, "Unable to write to child process");
+			error_log(ERRLOG_REPORT,  killp_phrases[4], NULL);
 		}
 		/* read the result back */
 		else if(read(pkill->child.Stdout, &keep, 2) <= 0) {
-			error_log(ERRLOG_REPORT, "Unable to read from child process");
+			error_log(ERRLOG_REPORT,  killp_phrases[5], NULL);
 		}
 		else {
 			keepyn = keep[0] - '0';	/* convert ascii to 0/1 */ 
@@ -265,10 +266,10 @@ int chk_msg_kill_fork(PKillStruct pkill, char *header) {
 		}
 	}
 	else if(waitstatus == -1) { /* huh? */
-		MyPerror("Process Error");
+		MyPerror( killp_phrases[6]);
 	}
 	else { /* child died */
-		error_log(ERRLOG_REPORT, "Child process died");
+		error_log(ERRLOG_REPORT,  killp_phrases[7]);
 	} 		
 
 	switch (keepyn) {
@@ -305,16 +306,16 @@ RETSIGTYPE pipe_sighandler(int what) {
 	/* and handle it appropriately*/
 	
 	int status;
-	error_log(ERRLOG_REPORT, "Child process closed pipe, waiting for child to end\n");
+	error_log(ERRLOG_REPORT, killp_phrases[8], NULL);
 	wait(&status);
 	if(WIFEXITED(status) != 0) {
-		error_log(ERRLOG_REPORT, "Child exited with a status of %d\n", WEXITSTATUS(status));
+		error_log(ERRLOG_REPORT, killp_phrases[9], str_int(WEXITSTATUS(status)), NULL);
 	}
 	else if(WIFSIGNALED(status) != 0) {
-		error_log(ERRLOG_REPORT, "Child exited due to signal %d\n", WTERMSIG(status));
+		error_log(ERRLOG_REPORT, killp_phrases[10], str_int(WTERMSIG(status)), NULL);
 	}
 	else {
-		error_log(ERRLOG_REPORT, "Child died, cause of death unknown\n");
+		error_log(ERRLOG_REPORT, killp_phrases[11], NULL);
 	}
 }
 #endif

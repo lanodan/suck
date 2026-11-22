@@ -26,7 +26,7 @@
 
 /* If you don't EVER plan to use the KILLFILE stuff, comment this out for a slight speed increase */
 /* If you want to, or plan to, use the KILLFILE stuff, uncomment this */
-/* #define KILLFILE 1  */
+#define KILLFILE 1
 
 /* If you want the kill/keep file routine to keep articles that are both flagged as */
 /* delete and keep (either by matching both a delete group and a keep group, or by not matching */
@@ -45,15 +45,12 @@
 /* case insensitive compare.  It can be overridden in a killfile. */
 #define KILLFILE_QUOTE '"'
 
-/* if you want to log every article that gets killed, then uncomment this */
-#define KILLFILE_LOG 1
-
 #ifdef HAVE_SELECT	/* if the system doesn't support select, then you can't use this */
 /* if you want to timeout if no read after X seconds define this   */
 /* as number of seconds before timeout 				   */
 /* else, comment it out.  If you comment it out, if link goes down */
 /* we'll just sit, twiddling our bits, until whenever.             */
-#define TIMEOUT 90
+#define TIMEOUT 300
 #endif /* HAVE_SELECT */
 
 /* signal which will interrupt us DON'T USE SIGKILL OR SIGSTOP */
@@ -63,6 +60,7 @@
 /* then leave this in.  If you don't, and the child program dies unexpectedly */
 /* suck will also die. */
 #define MYSIGNAL SIGTERM
+#define PAUSESIGNAL SIGUSR1
 
 /* If you want to have suck check in your history file for articles */
 /* that you already have, uncomment this.			    */
@@ -111,6 +109,7 @@
 #define N_RESTART "suck.restart"
 #define N_KILLLOG "suck.killlog"
 #define N_LOCKFILE "suck.lock"
+#define N_PHRASES "suck.phrases"
 
 /* Old copy of N_OLDRC (saved just in case) */
 #define N_OLD_OLDRC    "sucknewsrc.old"
@@ -149,6 +148,13 @@
 
 /*  Internal buffer size shouldn't need to change */
 #define MAXLINLEN 4096
+
+/* Internal buffer size for print_phrases */
+#define PHRASES_BLOCK_SIZE 1024
+
+/* Character that is used to separate variables (front and back) in phrases */
+#define PHRASES_SEPARATOR '%'
+#define PHRASES_VAR_CHAR 'v'
 
 /* the following should be handled by the auto-config stuff */
 /* shouldn't need to touch below here */

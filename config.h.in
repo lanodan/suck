@@ -72,6 +72,9 @@
 /* Define if you have the socks5 library (-lsocks5).  */
 #undef HAVE_LIBSOCKS5
 
+/* Define if you have the <sys/select.h> header file. */
+#undef HAVE_SYS_SELECT_H
+
 #ifdef _POSIX_VERSION
 #	define POSIX_SIGNALS 1
 #endif

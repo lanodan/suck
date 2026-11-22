@@ -4,6 +4,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <errno.h>
 #ifdef HAVE_DIRENT_H
@@ -28,6 +29,7 @@
 #include "suck_config.h"
 #include "both.h"
 #include "suckutils.h"
+#include "phrases.h"
 
 /*------------------------------------------------------------------------*/
 /* check if directory exists, if not, try to create it.			  */
@@ -41,11 +43,11 @@ int checkdir(const char *dirname) {
 	if(stat(dirname, &buf)== 0) {
 		/* it exists */
 		if(!S_ISDIR(buf.st_mode)) {
-			error_log(ERRLOG_REPORT, "%s: Not a directory\n", dirname);
+			error_log(ERRLOG_REPORT, sucku_phrases[0], dirname, NULL);
 			retval = FALSE;
 		}
 		else if(access(dirname, W_OK) != 0) {
-			error_log(ERRLOG_REPORT, "%s: Write permission denied\n", dirname);
+			error_log(ERRLOG_REPORT, sucku_phrases[1], dirname, NULL);
 			retval = FALSE;
 		}
 	}
@@ -167,7 +169,7 @@ int do_lockfile(PMaster master) {
 		fscanf(f_lock, "%ld", (long *) &pid);
 		fclose(f_lock);
 		if(pid <= 0) {
-			error_log(ERRLOG_REPORT, "Lock File %s , Invalid PID, aborting.\n", lockfile);
+			error_log(ERRLOG_REPORT,  sucku_phrases[2], lockfile, NULL);
 			retval = RETVAL_ERROR;
 		}
 		/* this next technique borrowed from pppd, sys-linux.c (ppp2.2.0c) */
@@ -177,15 +179,15 @@ int do_lockfile(PMaster master) {
 			/* no pid found */
 			if(unlink(lockfile) == 0) {
 				/* this isn't error so don't put in error log */
-				fprintf(master->msgs, "Lock File %s , stale PID %ld removed.\n", lockfile, (long) pid);
+				fprintf(master->msgs, sucku_phrases[3], lockfile, NULL);
 			}
 			else {
-				error_log(ERRLOG_REPORT, "Unable to remove Lock File %s , stale PID %ld, Aborting.\n", lockfile, (long) pid);
+				error_log(ERRLOG_REPORT, sucku_phrases[4], lockfile, NULL);
 				retval = RETVAL_ERROR;
 			}
 		}
 		else {
-			error_log(ERRLOG_REPORT, "Lock File %s , PID %ld exists, aborting.\n", lockfile, (long) pid);
+			error_log(ERRLOG_REPORT, sucku_phrases[5], lockfile,  NULL);
 			retval = RETVAL_ERROR;
 		}
 	}
@@ -195,7 +197,7 @@ int do_lockfile(PMaster master) {
 			fclose(f_lock);
 		}
 		else {
-			error_log(ERRLOG_REPORT, "Unable to create lock file %s\n", lockfile);
+			error_log(ERRLOG_REPORT, sucku_phrases[6],  lockfile, NULL);
 			retval = RETVAL_ERROR;
 		}
 	}

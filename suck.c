@@ -1,3 +1,4 @@
+
 #include <config.h>
 
 #include <stdio.h>
@@ -25,6 +26,7 @@
 
 #include <netdb.h>
 #include <string.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <math.h>
 #include <errno.h>
@@ -34,6 +36,7 @@
 #include "suck.h"
 #include "suckutils.h"
 #include "dedupe.h"
+#include "phrases.h"
 
 #ifdef KILLFILE
 #include "killfile.h"
@@ -63,8 +66,12 @@ int allocnode(PMaster, char *, int);
 int restart_yn(PMaster);
 int scan_args(PMaster, int, char *[]);
 void do_cleanup(void);
+void load_phrases(PMaster);
+void free_phrases(void);
 #ifdef MYSIGNAL
 RETSIGTYPE sighandler(int);
+void pause_signal(int, PMaster);
+enum {PAUSE_SETUP, PAUSE_DO};
 
 /*------------------------------------------*/
 int GotSignal = FALSE;		
@@ -72,6 +79,18 @@ int GotSignal = FALSE;
 /* the only graceful way to handle a signal */
 /*------------------------------------------*/
 #endif
+
+/* set up for phrases */
+char **both_phrases=default_both_phrases;
+char **suck_phrases=default_suck_phrases;
+char **timer_phrases=default_timer_phrases;
+char **chkh_phrases=default_chkh_phrases;
+char **dedupe_phrases=default_dedupe_phrases;
+char **killf_reasons=default_killf_reasons;
+char **killf_phrases=default_killf_phrases;
+char **killp_phrases=default_killp_phrases;
+char **sucku_phrases=default_sucku_phrases;
+
 
 enum { BATCH_FALSE, BATCH_INNXMIT, BATCH_RNEWS };		/* poss values for batch variable */
 enum { MANDATORY_YES = 'M' , MANDATORY_OPTIONAL = 'O' };	/* do we have to download this article */
@@ -110,7 +129,11 @@ void main(int argc, char *argv[]) {
 	master.host = getenv("NNTPSERVER");		/* the default */
 	master.pause_time = -1;
 	master.pause_nrmsgs = -1;
+	master.sig_pause_time = -1;
+	master.sig_pause_nrmsgs = -1;
 	master.ms_kludge = FALSE;	/* microsoft kludge for xhdr command */
+	master.killfile_log = TRUE;	/* do we log killed messages */
+	master.phrases = NULL;
 
 	/* allow no args, only the hostname, or hostname as first arg */
 	/* also have to do the file argument checking */
@@ -124,7 +147,11 @@ void main(int argc, char *argv[]) {
 				retval = scan_args(&master, fargc, fargs);
 			}
 		}   
-		else {
+		else if(argv[1][0] == '-') {
+			/* in case of suck -V */
+			retval = scan_args(&master, 1, &(argv[1]));
+		} 
+		else{	
 			master.host = argv[1];
 		}
 		break;
@@ -166,8 +193,16 @@ void main(int argc, char *argv[]) {
 		do_debug("master.batchfile = %s\n", (master.batchfile == NULL) ? "NULL" : master.batchfile );
 		do_debug("master.cleanup = %d\n", master.cleanup);
 		do_debug("master.host = %s\n", (master.host == NULL) ? "NULL" : master.host);
+		do_debug("master.portnr = %u\n", master.portnr);
+		do_debug("master.pause_time = %d\n", master.pause_time);
+		do_debug("master.pause_nrmsgs = %d\n", master.pause_nrmsgs);
+		do_debug("master.sig_pause_time = %d\n", master.sig_pause_time);
+		do_debug("master.sig_pause_nrmsgs = %d\n", master.sig_pause_nrmsgs);
+		do_debug("master.ms_kludge = %d\n", master.ms_kludge);
+		do_debug("master.killfile_log = %d\n", master.killfile_log);
+		do_debug("master.phrases = %s\n", master.phrases);
 #endif
-	
+
 #ifdef LOCKFILE
 		/* this has to be here since we use full_path() to get path for lock file */
 		/* and it isn't set up until we process the args above. */
@@ -177,9 +212,13 @@ void main(int argc, char *argv[]) {
 #endif
 
 #ifdef MYSIGNAL
-		signal(MYSIGNAL, sighandler); 	/* set up signal handler */
+		signal(MYSIGNAL, sighandler); 	/* set up signal handlers */
+		signal(PAUSESIGNAL, sighandler);
+
 		signal_block(MYSIGNAL_SETUP);	/* set up sgetline() to block signal */ 
+		pause_signal(PAUSE_SETUP, &master);	/* set up routine for pause swap if signal */	
 #endif
+		load_phrases(&master);	/* this has to be here so rest prints okay */
 
 		/* set up status log, if none specified or unable to open status log */
 		/* then  use stdout or stderr */
@@ -187,7 +226,7 @@ void main(int argc, char *argv[]) {
 		if(master.status_file_name != NULL) {
 			/* okay attempt to open it up */
 			if((master.msgs = fopen(master.status_file_name, "a")) == NULL) {
-				MyPerror("suck: status log");
+				MyPerror(suck_phrases[0]);
 			}
 			else {
 				master.status_file = TRUE;
@@ -198,7 +237,7 @@ void main(int argc, char *argv[]) {
 			master.msgs = ( master.MultiFile == FALSE) ? stderr : stdout ;
 		}
 		
-		fprintf(master.msgs, "Attempting to connect to %s\n", master.host);		
+		print_phrases(master.msgs, suck_phrases[1], master.host, NULL);		
 		master.sockfd = connect_to_nntphost( master.host, &hi, master.msgs, master.portnr);
 		if(master.sockfd < 0 ) {
 			retval = RETVAL_ERROR;
@@ -208,7 +247,7 @@ void main(int argc, char *argv[]) {
 		}
 		else {
 			if((loop = restart_yn(&master)) == RESTART_YES) { 
-  				fprintf(master.msgs, "Initiating restart at article %d of %d\n", master.itemon, master.nritems);
+  				print_phrases(master.msgs, suck_phrases[2], str_int(master.itemon), str_int(master.nritems), NULL);
 				retval = get_articles(&master);
 			}
 			else if(loop == RESTART_ERROR) {
@@ -218,7 +257,7 @@ void main(int argc, char *argv[]) {
 				retval = RETVAL_ERROR;
 			}
 			else if(master.nritems == 0) {
- 				fprintf(master.msgs,"No articles.\r\n");
+ 				print_phrases(master.msgs,suck_phrases[3], NULL);
 				retval = RETVAL_NOARTICLES;
 			}
 			else {
@@ -228,24 +267,37 @@ void main(int argc, char *argv[]) {
 		}
 		if(master.sockfd >= 0) {
 			close(master.sockfd);
-			fprintf(master.msgs,"Closed connection to %s\n",hi->h_name);
+			print_phrases(master.msgs,suck_phrases[4], hi->h_name, NULL);
 		}
+#ifdef DEBUG2
+		do_debug("retval=%d (RETVAL_OK=%d), m.nrgot=%d, m.batch=%d\n", retval, RETVAL_OK, master.nrgot, master.batch);
+#endif
 		if((retval == RETVAL_OK || master.always_batch == TRUE) && master.nrgot > 0) {
 			switch(master.batch) {
 			  case BATCH_INNXMIT:
-				fprintf(master.msgs,"Building Inn Batch File\n");
+#ifdef DEBUG2
+				do_debug("calling do_innbatch()\n");
+#endif
+				print_phrases(master.msgs, suck_phrases[5], NULL);
 				do_innbatch(&master);
 				break;
 			  case BATCH_RNEWS:
-				fprintf(master.msgs,"Building Rnews Batch File(s)\n");
+#ifdef DEBUG2
+				do_debug("calling do_rnewsbatch()\n");
+#endif
+				print_phrases(master.msgs,suck_phrases[6], NULL);
 				do_rnewsbatch(&master);
 				break;
 			  default:
+#ifdef DEBUG2
+				do_debug("calling unknown batcher, something screwy is up\n");
+#endif
+
 				break;
 			}
 		}
 		if((retval == RETVAL_NOARTICLES || retval == RETVAL_OK) && master.cleanup == TRUE) {
-			fprintf(master.msgs, "Cleaning up after myself\n");
+			print_phrases(master.msgs, suck_phrases[7], NULL);
 			do_cleanup();
 		}
 		/* close out status log */
@@ -271,20 +323,21 @@ void main(int argc, char *argv[]) {
 		}
 #endif	
 	}
+	free_phrases();	/* do this last so everything is displayed correctly */
 	exit(retval);
 }
 /*--------------------------------------------------------------------*/
 int get_message_index(PMaster master) {
 
-	int count,low,high,response,lastread,retval,i,maxread,xhdr_result;
-	char *sp,*inbuf,buf[MAXLINLEN],group[512];
+	int count,low,high,response,lastread,retval,i,maxread,xhdr_result,nrread;
+	char *sp,*inbuf,buf[MAXLINLEN],group[512],cmd[MAXLINLEN];
 	FILE *ifp,*tmpfp;
 
 	retval = RETVAL_OK;
 	ifp = tmpfp = NULL;
 
 #ifdef TIMER
-	TimerFunc(TIMER_START, 0);
+	TimerFunc(TIMER_START, 0, NULL);
 #endif
 	/* msnews.microsoft.com doesn't use the standard return value */
 	/* for the xhdr command, it uses 224, so I have to be able to */
@@ -303,49 +356,61 @@ int get_message_index(PMaster master) {
 		if(buf[0] == SUCKNEWSRC_COMMENT_CHAR) {
 			/* skip this group */
 			fputs(buf, tmpfp);
-			fprintf(master->msgs, "Skipping Line: %s", buf);
+			print_phrases(master->msgs, suck_phrases[8], buf, NULL);
 			continue;
 		}
-		i = sscanf(buf, "%s %d %d\n", group, &lastread, &maxread);
-		if ( i < 2 || i > 3) {
-			error_log(ERRLOG_REPORT, "Invalid Line: %s", buf);
+		nrread = sscanf(buf, "%s %d %d\n", group, &lastread, &maxread);
+		if ( nrread < 2 || nrread > 3) {
+			error_log(ERRLOG_REPORT, suck_phrases[9], buf, NULL);
+			fputs(buf, tmpfp);	/* rewrite the line */
 			continue;
 		}
 		/* now make some sanity tests on the maxread value */
-		if(i == 2) { 
+		if(nrread == 2) { 
 			maxread = 0;
 		}
 		else if (maxread <= 0) {
-			error_log(ERRLOG_REPORT, "Invalid number for maxread field: %d : ignoring\n", maxread);
+			error_log(ERRLOG_REPORT, suck_phrases[10], maxread, NULL);
 			maxread = 0;
 		}
-  		sprintf(buf,"group %s\r\n",group);
-		if(send_command(master,buf,&inbuf,0) != RETVAL_OK) {
+  		sprintf(cmd,"group %s\r\n",group);
+		if(send_command(master,cmd,&inbuf,0) != RETVAL_OK) {
 			retval = RETVAL_ERROR;
 		}
 		else {
 			sp = number(inbuf, &response);
 			if(response != 211) {
-				/* handle group not found - rewrite line in newrc */
-				if(response == 411) {
-					error_log(ERRLOG_REPORT,"GROUP <%s> not found on host\r\n", group);
-					fprintf(tmpfp, "%s %d\n", group, lastread);
-				}
-				else {
-					error_log(ERRLOG_REPORT,"GROUP <%s>, unexpected response %d\r\n", group, response );
+				fputs(buf, tmpfp);	/* rewrite line AS IS in newrc */
+				/* handle group not found */
+				switch(response) {
+				  case 411:
+					error_log(ERRLOG_REPORT, suck_phrases[11], group, NULL);
+					break;
+				  case 500:
+					error_log(ERRLOG_REPORT, suck_phrases[48], NULL);
+					break;
+				  default:
+					error_log(ERRLOG_REPORT, suck_phrases[12],group,str_int(response),NULL);
+					break;
 				}
    				continue; /* next newsgroup */
 			}
 			sp = number(sp, &count);
   			sp = number(sp, &low);
 			sp = number(sp, &high);
-  			fprintf(tmpfp, "%s %d\n", group, high);
+  			fprintf(tmpfp, "%s %d", group, high);
+			
+			/* now if nrread == 3, need to rewrite the maxread, else just nl */
+			if(nrread==3) {
+				fprintf(tmpfp, " %d", maxread);
+			}
+			fputs("\n", tmpfp);
   			
   			/* add a sanity check in case remote host changes its numbering scheme */
 			/* the > 0 is needed, since if a nnrp site has no article it will reset */
 			/* the count to 0.  So not an error */
   			if(lastread > high && high > 0) {
-  				fprintf(master->msgs,"%s - %d...High Article Nr is low, did host reset its counter?\n",group,high);
+  				print_phrases(master->msgs,suck_phrases[13],group,str_int(high),NULL);
   			}
 
 			if(lastread < 0 ) {
@@ -367,12 +432,12 @@ int get_message_index(PMaster master) {
 				/* now set the max nr of messages to read */
 				if(maxread > 0 && high-maxread > lastread) {
 					lastread = high-maxread;
-					fprintf(master->msgs, "%s - limiting # of articles to %d\n",group, maxread);
+					print_phrases(master->msgs, suck_phrases[14], group, str_int(maxread), NULL);
 				}
    
-   				sprintf(buf, "xhdr Message-ID %d-\r\n", lastread+1);
-   				fprintf(master->msgs,"%s...articles %d-%d\r\n", group, lastread+1, high);
-				i = send_command(master,buf,&inbuf,xhdr_result);
+   				sprintf(cmd, "xhdr Message-ID %d-\r\n", lastread+1);
+   				print_phrases(master->msgs, suck_phrases[15], group, str_int(lastread+1), str_int(high), NULL);
+				i = send_command(master,cmd,&inbuf,xhdr_result);
 				if(i != RETVAL_OK) {
 					retval = RETVAL_ERROR;
 				}
@@ -390,18 +455,19 @@ int get_message_index(PMaster master) {
 		} /* end else */
 	} /* end while */
 #ifdef TIMER
-	fprintf(master->msgs, "%s\n", TimerFunc(TIMER_TIMEONLY, 0));
+	TimerFunc(TIMER_TIMEONLY, 0,master->msgs);
 #endif
 	if(retval == RETVAL_OK) {
-		fprintf(master->msgs, "%d Articles to download\n", master->nritems);
+		print_phrases(master->msgs, suck_phrases[16], str_int(master->nritems), NULL);
 		retval = do_supplemental(master);
 	}
-	else {
+	else if(ifp != NULL) {
 		/* this is in case we had to abort the above while loop (due to loss of pipe to server) and */
 		/* we hadn't finished writing out the suck.newrc, this finishes it up. */
-		while(fgets(buf, MAXLINLEN-1, ifp) != NULL) {
+		do {
 			fputs(buf, tmpfp);
 		}
+		while(fgets(buf, MAXLINLEN-1, ifp) != NULL);
 	}
 	if(tmpfp != NULL) {
 		fclose(tmpfp);
@@ -424,12 +490,15 @@ int get_articles(PMaster master) {
 	retval = RETVAL_OK;
 	logfp = NULL;
 
-	logcount = log10((double)master->nritems) + 1;	/* how many digits wide is the articleCount */
-
-
+	/* figure out how many digits wide the articleCount is for display purposes */
+	/* this used to be log10()+1, but that meant I needed the math library */ 
+	for(logcount=1, i=master->nritems; i > 9 ; logcount++) {
+		i /= 10;
+	}
+ 
 #ifdef KILLFILE
 	if(master->do_killfile == TRUE) {
-		killp = parse_killfile();
+		killp = parse_killfile(master->killfile_log);
 	}
 #endif		
 	if(master->MultiFile == TRUE && checkdir(full_path(FP_GET, FP_MSGDIR, NULL)) == FALSE) {
@@ -451,7 +520,7 @@ int get_articles(PMaster master) {
 			fflush(logfp);
 
 #ifdef TIMER
-			TimerFunc(TIMER_START, 0);
+			TimerFunc(TIMER_START, 0, NULL);
 #endif
 #ifdef MYSIGNAL
 			while(retval == RETVAL_OK && master->curr != NULL && GotSignal == FALSE) {
@@ -476,7 +545,11 @@ int get_articles(PMaster master) {
 #ifndef TIMER
   					fprintf(master->msgs, "%5d\r",master->nritems  - master->itemon);
 #else 
-					fprintf(master->msgs, "%5d %s\r", master->nritems - master->itemon, TimerFunc(TIMER_DISPLAY, 0));
+					/* these don't go thru print_phrases so I can keep spacing right */
+					/* and it only prints numbers */
+					fprintf(master->msgs, "%5d ", master->nritems - master->itemon);
+					TimerFunc(TIMER_DISPLAY, 0, master->msgs);
+					fprintf(master->msgs, "\r");
 #endif
 					fflush(master->msgs);	/* so message gets printed now */
 				}
@@ -496,7 +569,7 @@ int get_articles(PMaster master) {
 			}
 #ifdef TIMER
 			if(retval == RETVAL_OK) {
-				fprintf(master->msgs,"%s\n", TimerFunc(TIMER_TOTALS, 0));
+				TimerFunc(TIMER_TOTALS, 0, master->msgs);
 			}
 #endif				
 		}
@@ -544,22 +617,22 @@ int do_supplemental(PMaster master) {
 	oldkept = master->nritems;		
 
 	if((fp = fopen(full_path(FP_GET, FP_DATADIR, N_SUPPLEMENTAL), "r")) != NULL) {
-		fprintf(master->msgs, "Processing Supplemental List\n");
+		print_phrases(master->msgs, suck_phrases[17], NULL);
 		while(retval == RETVAL_OK && fgets(linein, MAXLINLEN, fp) != NULL) {
 			if(linein[0] != '<') {
-				error_log(ERRLOG_REPORT, "Supplemental Invalid line: %s, ignoring\n", linein);
+				error_log(ERRLOG_REPORT, suck_phrases[18], linein, NULL);
 			}
 			else {
 				retval = allocnode(master, linein, MANDATORY_YES);
 			}
 		}
-		fprintf(master->msgs,"Supplemental List Processed - %d articles added, %d articles\n", 
-			master->nritems-oldkept, master->nritems);
+		print_phrases(master->msgs, suck_phrases[19], str_int(master->nritems-oldkept), \
+			str_int(master->nritems), NULL);
 		fclose(fp);
 	}
 	dedupe_list(master);
 #ifdef TIMER
-	TimerFunc(TIMER_TIMEONLY, 0);
+	TimerFunc(TIMER_TIMEONLY, 0, NULL);
 #endif
 
 #ifdef CHECK_HISTORY
@@ -567,7 +640,7 @@ int do_supplemental(PMaster master) {
 		chkhistory(master);
 	}
 #endif
-	fprintf(master->msgs,"Total Articles to Download: %d\n", master->nritems); 
+	print_phrases(master->msgs,suck_phrases[20], str_int(master->nritems), NULL); 
 
 	if(master->head != NULL && master->nritems > 0) {
 		/* now write out whatever list we have*/
@@ -609,17 +682,17 @@ int allocnode(PMaster master, char *linein, int mandatory) {
 	}
 	
 	if(*st_ptr != '<' && *end_ptr != '>') {
-		error_log(ERRLOG_REPORT, "Invalid Article NR, skipping: %s\n", linein);
+		error_log(ERRLOG_REPORT, suck_phrases[21], linein, NULL);
 	}
 	else {
 		*(end_ptr+1) = '\0';	/* ensure null termination */
 		
 		if((ptr = malloc(sizeof(List))) == NULL) {
-			error_log(ERRLOG_REPORT, "Out of Memory, aborting");
+			error_log(ERRLOG_REPORT, suck_phrases[22], NULL);
 			retval = RETVAL_ERROR;
 		}
 		else if((ptr->msgnr = calloc(strlen(st_ptr)+1, sizeof(char))) == NULL) {
-			error_log(ERRLOG_REPORT, "Out of Memory, aborting");
+			error_log(ERRLOG_REPORT, suck_phrases[22], NULL);
 			free(ptr);
 			retval = RETVAL_ERROR;
 		}
@@ -660,6 +733,7 @@ int do_innbatch(PMaster master) {
 	char tmp[20];
 	DIR *dptr;
 	struct dirent *entry;
+
 
 	if((fptr = fopen(master->batchfile, "w")) == NULL) {
 		MyPerror(master->batchfile);
@@ -711,9 +785,6 @@ int do_rnewsbatch(PMaster master) {
 		/* look for entries which have our file name ...-xxxxx where xxxx is articleCount */
 		while(retval == RETVAL_OK && (entry = readdir(dptr))) {
 			if(strstr(entry->d_name, tmp) != NULL) {
-#ifdef DEBUG2
-				do_debug("Adding File %s to batch\n", entry->d_name);
-#endif
 				tptr = full_path(FP_GET_NOPOSTFIX, FP_MSGDIR, entry->d_name);
 				if(stat(tptr, &sbuf) != 0 || (fpin = fopen(tptr, "r")) == NULL) {
 					MyPerror(tptr);
@@ -835,7 +906,7 @@ int get_a_chunk(int sockfd, FILE *fptr) {
 	
 	while(done == FALSE && (len = sgetline(sockfd, &inbuf)) >= 0) {
 #ifdef TIMER
-		TimerFunc(TIMER_ADDBYTES, len);
+		TimerFunc(TIMER_ADDBYTES, len, NULL);
 #endif			
 		if(inbuf[0] == '.' && partial == FALSE) {
 			if(len == 2 && inbuf[1] == '\n') {
@@ -853,6 +924,9 @@ int get_a_chunk(int sockfd, FILE *fptr) {
 			fputs(inbuf, fptr);
 			fflush(fptr);
 			partial= (len==MAXLINLEN&&inbuf[len-1]!='\n') ? TRUE : FALSE;
+#ifdef DEBUG2
+			do_debug("changing partial to %s\n", (partial == TRUE) ? "TRUE" : "FALSE" );
+#endif
 		} 
 	}
 	if(len < 0) {
@@ -871,10 +945,9 @@ int restart_yn(PMaster master) {
 	int i, retval = RESTART_NO;
 	FILE *fp;
 	char msgnr[MAXLINLEN], optional;
-	const char *fre, *fso;
+	const char *fso;
 
-	fre = full_path(FP_GET, FP_TMPDIR, N_RESTART);
-	if(stat(fre, &buf) == 0) {
+	if(stat(full_path(FP_GET, FP_TMPDIR, N_RESTART), &buf) == 0) {
 		/* If suck.restart exists something went wrong */
 		retval = RESTART_YES;	
 		master->itemon = (buf.st_size == 0) ? 0 : buf.st_size - 1;
@@ -892,7 +965,7 @@ int restart_yn(PMaster master) {
 		}
 		else {
 			i = RETVAL_ERROR;
-			error_log(ERRLOG_REPORT, "Whoops, %s exists, but %s doesn't, aborting\n", fre, fso);
+			error_log(ERRLOG_REPORT, suck_phrases[23],full_path(FP_GET, FP_TMPDIR,N_RESTART),fso, NULL);
 		}
 		if(i == RETVAL_ERROR) {
 			retval = RESTART_ERROR;
@@ -904,10 +977,45 @@ int restart_yn(PMaster master) {
 #ifdef MYSIGNAL
 RETSIGTYPE sighandler(int what) {
 
-	error_log(ERRLOG_REPORT, "Signal received, will finish downloading article.\n");
-	GotSignal = TRUE;
-
+	switch(what) {
+	  case PAUSESIGNAL:
+		pause_signal(PAUSE_DO, NULL);
+		/* if we don't do this, the next time called, we'll abort */
+		signal(PAUSESIGNAL, sighandler);
+		signal_block(MYSIGNAL_SETUP);	/* jus to be on the safe side */ 
+		break;
+	  case MYSIGNAL:
+	  default:
+		error_log(ERRLOG_REPORT, suck_phrases[24], NULL);
+		GotSignal = TRUE;
+	}
 }
+/*----------------------------------------------------------------*/
+void pause_signal(int action, PMaster master) {
+
+	int x, y;
+	static PMaster psave = NULL;
+
+	switch(action) {
+	  case PAUSE_SETUP:
+		psave = master;
+		break;
+	  case PAUSE_DO:
+		if(psave == NULL) {
+			error_log(ERRLOG_REPORT, suck_phrases[25], NULL);
+		}
+		else {
+			/* swap pause_time and pause_nrmsgs with the sig versions */
+			x = psave->pause_time;
+			y = psave->pause_nrmsgs;
+			psave->pause_time = psave->sig_pause_time;
+			psave->pause_nrmsgs = psave->sig_pause_nrmsgs;
+			psave->sig_pause_time = x;
+			psave->sig_pause_nrmsgs = y;
+			print_phrases(psave->msgs, suck_phrases[26], NULL);
+		}
+	}
+}		
 #endif
 /*----------------------------------------------------------------*/
 int send_command(PMaster master, const char *cmd, char **ret_response, int good_response) {
@@ -929,7 +1037,7 @@ int send_command(PMaster master, const char *cmd, char **ret_response, int good_
 		do_debug("got answer: %s", resp);
 #endif
 #ifdef TIMER
-		TimerFunc(TIMER_ADDBYTES, len);
+		TimerFunc(TIMER_ADDBYTES, len, NULL);
 #endif
 		number(resp, &nr);
 		if(nr == 480 ) { /* we must do authorization */
@@ -947,11 +1055,11 @@ int send_command(PMaster master, const char *cmd, char **ret_response, int good_
 				do_debug("got answer: %s", resp);
 #endif
 #ifdef TIMER
-				TimerFunc(TIMER_ADDBYTES, len);
+				TimerFunc(TIMER_ADDBYTES, len, NULL);
 #endif
 				number(resp, &nr);
 				if(nr != 381) {
-					error_log(ERRLOG_REPORT, "Weird Response to Authorization: %s", resp);
+					error_log(ERRLOG_REPORT, suck_phrases[27], resp, NULL);
 					retval = RETVAL_NOAUTH;
 				}
 				else {
@@ -969,7 +1077,7 @@ int send_command(PMaster master, const char *cmd, char **ret_response, int good_
 						do_debug("got answer: %s", resp);
 #endif
 #ifdef TIMER
-						TimerFunc(TIMER_ADDBYTES, len);
+						TimerFunc(TIMER_ADDBYTES, len, NULL);
 #endif
 						number(resp, &nr);
 						switch(nr) {
@@ -988,16 +1096,16 @@ int send_command(PMaster master, const char *cmd, char **ret_response, int good_
 								do_debug("got answer: %s", resp);
 #endif
 #ifdef TIMER
-								TimerFunc(TIMER_ADDBYTES, len);
+								TimerFunc(TIMER_ADDBYTES, len, NULL);
 #endif
 							}
 							break;
 						  case 502: /* permission denied */
 							retval = RETVAL_NOAUTH;
-							error_log(ERRLOG_REPORT, "Authorization Denied");
+							error_log(ERRLOG_REPORT, suck_phrases[28], NULL);
 							break;
 						  default: /* wacko error */
-							error_log(ERRLOG_REPORT, "Weird Response to Authorization: %s", resp);
+							error_log(ERRLOG_REPORT, suck_phrases[27], resp, NULL);
 							retval = RETVAL_NOAUTH;
 							break;
 						}
@@ -1006,7 +1114,7 @@ int send_command(PMaster master, const char *cmd, char **ret_response, int good_
 			}
 		}
 		if (good_response != 0 && nr != good_response) {
-			error_log(ERRLOG_REPORT,"*** Unexpected response to command: %s\n%s\n", cmd,resp);
+			error_log(ERRLOG_REPORT, suck_phrases[29],cmd,resp,NULL);
 			retval = RETVAL_UNEXPECTEDANS;
 		}
 	}
@@ -1029,19 +1137,19 @@ void do_cleanup() {
 	oldptr = full_path(FP_GET, FP_DATADIR, N_OLD_OLDRC);
 
 	if(rename(ptr, oldptr) != 0) {
-		MyPerror("Moving newsrc to backup:");
+		MyPerror(suck_phrases[30]);
 	}
 	else if(rename(full_path(FP_GET, FP_TMPDIR, N_NEWRC), ptr) != 0) {
-		MyPerror("Moving newrc to newsrc:");
+		MyPerror(suck_phrases[31]);
 	}
 	else if(unlink(full_path(FP_GET, FP_TMPDIR, N_SORTED)) != 0 && errno != ENOENT) {
 		/* ENOENT is not an error since this file may not always exist */
 		/* and it won't if there weren't any articles */
-		MyPerror("Removing Sorted file:");
+		MyPerror(suck_phrases[32]);
 	}
 	else if(unlink(full_path(FP_GET, FP_DATADIR, N_SUPPLEMENTAL)) != 0 && errno != ENOENT) {
 		/* ENOENT is not an error since this file may not always exist */
-		MyPerror("Removing Supplemental Message file:");
+		MyPerror(suck_phrases[33]);
 	}
 }
 /*---------------------------------------------------------------------------------------*/
@@ -1070,7 +1178,7 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 			retval = RETVAL_ERROR;
 		}
 		if(retval != RETVAL_OK) {
-			error_log(ERRLOG_REPORT, "Invalid argument: %s\n", argv[loop]);
+			error_log(ERRLOG_REPORT, suck_phrases[34], argv[loop], NULL);
 		}
 		else if(argv[loop][0] != FILE_CHAR) {
 			switch(argv[loop][1]) {
@@ -1086,7 +1194,7 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 				break;
 			  case 'r':
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No rnews batch file size provided\n");
+					error_log(ERRLOG_REPORT, suck_phrases[35], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -1095,7 +1203,7 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 				break;
 			  case 'p':
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No postfix provided\n");
+					error_log(ERRLOG_REPORT, suck_phrases[36], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -1104,7 +1212,7 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 				break;
 			  case 'd':	/* change one of the directory names */
 				if(loop+1 == argc) { 
-					error_log(ERRLOG_REPORT, "No directory name provided\n");
+					error_log(ERRLOG_REPORT, suck_phrases[37], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -1121,7 +1229,7 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 						break;
 					}
 					if(ptr == NULL) { 
-						error_log(ERRLOG_REPORT, "Invalid directory\n");
+						error_log(ERRLOG_REPORT, suck_phrases[38], NULL);
 						retval = RETVAL_ERROR;
 						break;
 					}
@@ -1138,12 +1246,12 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 					master->MultiFile = TRUE;
 					break;
 				  default:
-					error_log(ERRLOG_REPORT, "Invalid Batch arg: %s\n", argv[loop]);
+					error_log(ERRLOG_REPORT, suck_phrases[39], argv[loop], NULL);
 					retval = RETVAL_ERROR;
 					break;
 			  	}
 				if(retval == RETVAL_OK && loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Batch file name provided\n");
+					error_log(ERRLOG_REPORT, "%s\n", suck_phrases[40], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -1151,15 +1259,15 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 				}
 				break;
 			  case 'e':	/* use default error log path */
-				error_log(ERRLOG_SET_FILE, ERROR_LOG);
+				error_log(ERRLOG_SET_FILE, ERROR_LOG, NULL);
 				break;
 			  case 'E':	/* error log path */
 				if(loop+1 == argc) { 
-					error_log(ERRLOG_REPORT, "No Error Log name provided\n");
+					error_log(ERRLOG_REPORT, suck_phrases[41], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
-					error_log(ERRLOG_SET_FILE, argv[++loop]);
+					error_log(ERRLOG_SET_FILE, argv[++loop], NULL);
 				}
 				break;
 			  case 's':	/* use default status log name */
@@ -1167,7 +1275,7 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 				break;
 			  case 'S':	/* status log path */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Status Log name provided\n");
+					error_log(ERRLOG_REPORT, suck_phrases[42], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -1175,18 +1283,22 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 				}
 				break;
 			  case 'V': 	/* show version number */
-			  	error_log(ERRLOG_REPORT, "Suck version %d.%d.%d\n",SUCKVER, SUCKVER_MINOR, SUCKVER_PATCH);
+			  	error_log(ERRLOG_REPORT,"Suck version %v1%.%v2%.%v3%\n",str_int(SUCKVER), \
+					str_int(SUCKVER_MINOR), str_int(SUCKVER_PATCH));
 				retval = RETVAL_VERNR;	/* so we don't do anything else */
 			  	break;
 			  case 'K':
 				master->do_killfile = FALSE;
+				break;
+			  case 'L':
+				master->killfile_log = FALSE;
 				break;
 			  case 'H':
 				master->do_chkhistory = FALSE;
 				break;
 			  case 'U':	/* userid */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Userid provided\n");
+					error_log(ERRLOG_REPORT, suck_phrases[43], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -1195,7 +1307,7 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 				break;
 			  case 'P':	/* passwd */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Passwd provided\n");
+					error_log(ERRLOG_REPORT, suck_phrases[44], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -1210,7 +1322,7 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 				break;
 			  case 'N':	/* override default portnr */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Port Number provided\n");
+					error_log(ERRLOG_REPORT, suck_phrases[45], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -1219,7 +1331,7 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 				break;
 			  case 'W':	/* wait (sleep) x seconds between every y articles */
 				if(loop+2 == argc) {
-					error_log(ERRLOG_REPORT, "Invalid pause arguments\n");
+					error_log(ERRLOG_REPORT, suck_phrases[46], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -1227,11 +1339,31 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 					master->pause_nrmsgs = atoi(argv[++loop]); 
 				}
 				break;
+			  case 'w':	/* wait (sleep) x seconds between every y articles IF we get a signal */
+				if(loop+2 == argc) {
+					error_log(ERRLOG_REPORT, suck_phrases[46], NULL);
+					retval = RETVAL_ERROR;
+				}
+				else {
+					master->sig_pause_time = atoi(argv[++loop]);
+					master->sig_pause_nrmsgs = atoi(argv[++loop]); 
+				}
+				break;
 			  case 'k':	/* microsoft news xhdr 224 kludge */
 				master->ms_kludge = TRUE;
 				break;
+			  case 'l': 	/* load language support */
+				if(loop+1 == argc) {
+					error_log(ERRLOG_REPORT, suck_phrases[47], NULL);
+					retval = RETVAL_ERROR;
+				}
+				else {
+					master->phrases = argv[++loop];
+				}
+				break;
+				
 			  default:
-				error_log(ERRLOG_REPORT, "Invalid argument: %s\n", argv[loop]);
+				error_log(ERRLOG_REPORT, suck_phrases[34], argv[loop], NULL);
 				retval = RETVAL_ERROR;
 				break;
 			}			
@@ -1240,4 +1372,78 @@ int scan_args(PMaster master, int argc, char *argv[]) {
 
 	return retval;
 
+}
+/*--------------------------------------------------------------------------------*/
+/* THE strings in this routine is the only one not in the arrays, since           */
+/* we are in the middle of reading the arrays, and they may or may not be valid.  */
+/*--------------------------------------------------------------------------------*/
+void load_phrases(PMaster master) {
+
+	int error=TRUE;
+	FILE *fpi;
+
+	if(master->phrases != NULL) {
+		
+		if((fpi = fopen(master->phrases, "r")) == NULL) {
+			MyPerror(master->phrases);
+		}
+		else if((both_phrases = read_array(fpi, NR_BOTH_PHRASES, TRUE)) != NULL) {
+			read_array(fpi, NR_RPOST_PHRASES, FALSE);	/* skip these */
+			read_array(fpi, NR_TEST_PHRASES, FALSE);
+			if(( suck_phrases = read_array(fpi, NR_SUCK_PHRASES, TRUE)) != NULL &&
+			   ( timer_phrases= read_array(fpi, NR_TIMER_PHRASES,TRUE)) &&
+			   (  chkh_phrases= read_array(fpi, NR_CHKH_PHRASES,TRUE)) &&
+			   (dedupe_phrases= read_array(fpi, NR_DEDUPE_PHRASES,TRUE)) &&
+			   ( killf_reasons= read_array(fpi, NR_KILLF_REASONS,TRUE)) &&
+			   ( killf_phrases= read_array(fpi, NR_KILLF_PHRASES,TRUE)) &&
+			   ( sucku_phrases= read_array(fpi, NR_SUCKU_PHRASES,TRUE))) {
+				error = FALSE;
+			}
+		}
+		fclose(fpi);
+		if(error == TRUE) {
+			/* reset back to default */
+			error_log(ERRLOG_REPORT, "Using default Language phrases\n", NULL);
+			both_phrases = default_both_phrases;
+			suck_phrases=default_suck_phrases;
+			timer_phrases=default_timer_phrases;
+			chkh_phrases=default_chkh_phrases;
+			dedupe_phrases=default_dedupe_phrases;
+			killf_reasons=default_killf_reasons;
+			killf_phrases=default_killf_phrases;
+			killp_phrases=default_killp_phrases;
+			sucku_phrases=default_sucku_phrases;
+		}
+	}		
+}
+/*--------------------------------------------------------------------------------*/
+void free_phrases(void) {
+		/* free up the memory alloced in load_phrases() */
+		if(both_phrases != default_both_phrases) {
+			free_array(NR_BOTH_PHRASES, both_phrases);
+		}
+		if(suck_phrases != default_suck_phrases) {
+			free_array(NR_SUCK_PHRASES, suck_phrases);
+		}
+		if(timer_phrases != default_timer_phrases) {
+			free_array(NR_TIMER_PHRASES, timer_phrases);
+		}
+		if(chkh_phrases != default_chkh_phrases) {
+			free_array(NR_CHKH_PHRASES, chkh_phrases);
+		}
+		if(dedupe_phrases != default_dedupe_phrases) {
+			free_array(NR_DEDUPE_PHRASES, dedupe_phrases);
+		}
+		if(killf_reasons != default_killf_reasons) {
+			free_array(NR_KILLF_REASONS, killf_reasons);
+		}
+		if(killf_phrases != default_killf_phrases) {
+			free_array(NR_KILLF_PHRASES, killf_phrases);
+		}
+		if(killp_phrases != default_killp_phrases) {
+			free_array(NR_KILLP_PHRASES, killp_phrases);
+		}
+		if(sucku_phrases != default_sucku_phrases) {
+			free_array(NR_SUCKU_PHRASES, sucku_phrases);
+		}		
 }

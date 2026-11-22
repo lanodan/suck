@@ -12,6 +12,7 @@
 #endif
 #include "suck_config.h"
 #include "both.h"
+#include "phrases.h"
 
 struct nntp_auth {
 	char *userid;
@@ -29,6 +30,7 @@ typedef struct {
 	struct nntp_auth auth;
 	FILE *status_fptr;
 	unsigned short int portnr;
+	char *phrases;
 } Args, *Pargs;
 
 /* function declarations */
@@ -38,6 +40,14 @@ int do_filter(int, char *[]);
 int send_command(int, const char *, char **, int, struct nntp_auth *);
 int scan_args(Pargs, int, char *[]);
 void log_fail(char *, char *);
+void load_phrases(Pargs);
+void free_phrases(void);
+
+/* stuff needed for language phrases */
+	/* set up defaults */	
+char **rpost_phrases = default_rpost_phrases;
+char **both_phrases = default_both_phrases;
+
 enum { RETVAL_ERROR = -1, RETVAL_OK, RETVAL_ARTICLE_PROB, RETVAL_NOAUTH, RETVAL_UNEXPECTEDANS};
 /*------------------------------------------------*/
 void main(int argc, char *argv[]) {
@@ -63,7 +73,7 @@ void main(int argc, char *argv[]) {
 	myargs.do_modereader = FALSE;
 	myargs.portnr = DEFAULT_NNRP_PORT;
 	myargs.host = getenv("NNTPSERVER");		/* the default */
-
+	myargs.phrases = NULL;
 
 	/* allow no args, only the hostname, or hostname as first arg */
 	/* also have to do the file argument checking */
@@ -102,10 +112,12 @@ void main(int argc, char *argv[]) {
 		retval = scan_args(&myargs, argc, args);	
 		break;
 	}
+	load_phrases(&myargs);	/* this has to be here so rest prints okay */
+
 	if(retval == RETVAL_ERROR) {
-		error_log(ERRLOG_REPORT, "\nUsage: %s hostname [@filename][-s | -S name] [-e | -E name] [-b batch_file -p dir_prefix]",argv[0]);
-		error_log(ERRLOG_REPORT, "[-U userid -P passwd] [-M] [-N portnr] [-f filter_args] <Return>\n");
-		error_log(ERRLOG_REPORT, "\t	If used, -f filter_args MUST be last argument on line");
+		error_log(ERRLOG_REPORT, rpost_phrases[0], argv[0], NULL);
+		error_log(ERRLOG_REPORT, rpost_phrases[1], NULL);
+		error_log(ERRLOG_REPORT, rpost_phrases[2], NULL);
 	}
 	else {
 #ifdef DEBUG3
@@ -123,6 +135,7 @@ void main(int argc, char *argv[]) {
 	do_debug("myargs.do_modereader = %d\n", myargs.do_modereader);
 	do_debug("myargs.portnr = %d\n", myargs.portnr);
 	do_debug("myargs.host = %s\n", myargs.host);
+	do_debug("myargs.phrases = %s\n", myargs.phrases);
 
 #endif
 		/* we processed args okay */
@@ -146,7 +159,7 @@ void main(int argc, char *argv[]) {
 		if(retval == 0) {
 			number(inbuf, &response);
 			if(response != 200) {
-				error_log(ERRLOG_REPORT, "Sorry, Can't post to this host\n");
+				error_log(ERRLOG_REPORT, rpost_phrases[3], NULL);
 				retval = RETVAL_ERROR;
 			}
 			else if(myargs.batch == NULL) {
@@ -157,7 +170,10 @@ void main(int argc, char *argv[]) {
 				/* batch mode */
 				retval = do_batch(sockfd, &myargs);
 			}		
-			fprintf(myargs.status_fptr,"Closing connection to %s\n", hi->h_name);
+			print_phrases(myargs.status_fptr, rpost_phrases[4], hi->h_name, NULL);
+#ifdef DEBUG3
+			do_debug("Sending quit");
+#endif
 			send_command( sockfd, "quit\r\n", NULL, 0, &(myargs.auth));
  			close(sockfd);
 		}
@@ -165,6 +181,7 @@ void main(int argc, char *argv[]) {
 	if(myargs.status_fptr != NULL && myargs.status_fptr != stdout) {
 		fclose(myargs.status_fptr);
 	}
+	free_phrases();	/* do this last so everything is displayed correctly */
 	exit(retval);
 }
 /*----------------------------------------------------------------------------------*/
@@ -172,7 +189,7 @@ int do_article(int sockfd, FILE *fptr, FILE *sptr, struct nntp_auth *authp) {
 
 	int len, response, retval, longline;
 	char buf[MAXLINLEN+4], *inbuf, *ptr;
-	/* the +4 in NL, CR, if have to double . in ifirst pos */
+	/* the +4 in NL, CR, if have to double . in first pos */
 	retval = RETVAL_OK;
 	longline = FALSE;
 
@@ -183,7 +200,7 @@ int do_article(int sockfd, FILE *fptr, FILE *sptr, struct nntp_auth *authp) {
 	response = send_command(sockfd, "POST\r\n", &inbuf, 340, authp);
 	fputs(inbuf, sptr);
 	if(response!=RETVAL_OK) {
-		error_log(ERRLOG_REPORT,"Bad luck. You can't use this server.\n");
+		error_log(ERRLOG_REPORT, rpost_phrases[5], NULL);
 		retval = RETVAL_ERROR;
 	}
 	else {
@@ -233,10 +250,10 @@ int do_article(int sockfd, FILE *fptr, FILE *sptr, struct nntp_auth *authp) {
 				number(ptr, &response);
 			}
 			if(response == 435) { 
-				fprintf(sptr, "Duplicate article, unable to post\n");
+				print_phrases(sptr, rpost_phrases[6], NULL);
 			}
 			else {
-				error_log(ERRLOG_REPORT,"Malfunction. Unable to post Article!\n");
+				error_log(ERRLOG_REPORT, rpost_phrases[7], NULL);
 				retval = RETVAL_ARTICLE_PROB;
 			}
 		}
@@ -277,7 +294,7 @@ int do_batch(int sockfd, Pargs myargs) {
 				else if(strncmp(myargs->filter_args[loop], RPOST_FILTER_OUT, (unsigned int) i) == 0) {
 					/* arg should be RPOST_FILTER_OUT=filename */
 					if(myargs->filter_args[loop][i] != '=') {
-						error_log(ERRLOG_REPORT, "Invalid argument: %s\n", myargs->filter_args[loop]);
+						error_log(ERRLOG_REPORT, rpost_phrases[17], myargs->filter_args[loop], NULL);
 					}
 					else {
 						outfile = (char *) &(myargs->filter_args[loop][i+1]);
@@ -291,10 +308,10 @@ int do_batch(int sockfd, Pargs myargs) {
 			if(outfile == NULL) {
 				/* no outfile defined, use built-in default */
 				outfile = tmpnam(NULL);
-				error_log(ERRLOG_REPORT, "Using Built-In default %s\n", outfile);
+				error_log(ERRLOG_REPORT, rpost_phrases[9], outfile, NULL);
 			}
 			if(infilenr < 0) {
-				error_log(ERRLOG_REPORT, "No infile specification, aborting\n");
+				error_log(ERRLOG_REPORT, rpost_phrases[10], NULL);
 				retval = RETVAL_ERROR;
 			}
 		}
@@ -340,12 +357,12 @@ int do_batch(int sockfd, Pargs myargs) {
 			}
 
 			if(infile == NULL) {
-				error_log(ERRLOG_REPORT, "No file to process, aborting\n");
+				error_log(ERRLOG_REPORT, rpost_phrases[11], NULL);
 				retval = RETVAL_ERROR;
 			}
 			else if((fpi_msg = fopen(infile, "r")) == NULL) {
 				/* skip to next article if infile don't exist */
-				error_log(ERRLOG_REPORT, "Skipping Empty Article\n");
+				error_log(ERRLOG_REPORT, rpost_phrases[12],NULL);
 			}
 			else {
 				retval = do_article(sockfd, fpi_msg, myargs->status_fptr, &(myargs->auth));
@@ -367,7 +384,7 @@ int do_batch(int sockfd, Pargs myargs) {
 		}		
 		if(myargs->deleteyn == TRUE && retval == RETVAL_OK) {
 			unlink(myargs->batch);
-			fprintf(myargs->status_fptr, "Deleting batch file: %s\n", myargs->batch);
+			print_phrases(myargs->status_fptr, rpost_phrases[13], myargs->batch,NULL);
 		}
 	}
 	return retval;
@@ -389,12 +406,12 @@ int do_filter(int argc, char *argv[]) {
 	switch((int) fork()) {
 	  case 0:	/* in child, do execl */
 		if(execvp(argv[0], argv) == -1) {
-			MyPerror("Execl");
+			MyPerror(rpost_phrases[14]);
 			retval = RETVAL_ERROR;
 		}
 		break;
 	  case -1:	/* should never get here */
-		MyPerror("Fork");
+		MyPerror(rpost_phrases[15]);
 		retval = RETVAL_ERROR;
 		break;
 	  default:	/* in parent, wait for child to finish */
@@ -439,7 +456,7 @@ int send_command(int sockfd, const char *cmd, char **ret_response, int good_resp
 #endif
 				number(resp, &nr);
 				if(nr != 381) {
-					error_log(ERRLOG_REPORT, "Weird Response to Authorization: %s", resp);
+					error_log(ERRLOG_REPORT, rpost_phrases[16], resp,NULL);
 					retval = RETVAL_NOAUTH;
 				}
 				else {
@@ -476,10 +493,10 @@ int send_command(int sockfd, const char *cmd, char **ret_response, int good_resp
 							break;
 						  case 502: /* permission denied */
 							retval = RETVAL_NOAUTH;
-							error_log(ERRLOG_REPORT, "Authorization Denied");
+							error_log(ERRLOG_REPORT, rpost_phrases[17], NULL);
 							break;
 						  default: /* wacko error */
-							error_log(ERRLOG_REPORT, "Weird Response to Authorization: %s", resp);
+							error_log(ERRLOG_REPORT, rpost_phrases[16], resp, NULL);
 							retval = RETVAL_NOAUTH;
 							break;
 						}
@@ -488,7 +505,7 @@ int send_command(int sockfd, const char *cmd, char **ret_response, int good_resp
 			}
 		}
 		if (good_response != 0 && nr != good_response) {
-			error_log(ERRLOG_REPORT,"*** Unexpected response to command: %s\n%s\n", cmd,resp);
+			error_log(ERRLOG_REPORT,rpost_phrases[18], cmd,resp, NULL);
 			retval = RETVAL_UNEXPECTEDANS;
 		}
 	}
@@ -515,13 +532,13 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 		}
 
 		if(retval != RETVAL_OK) {
-			error_log(ERRLOG_REPORT, "Invalid argument: %s\n", argv[loop]);
+			error_log(ERRLOG_REPORT, rpost_phrases[19], argv[loop], NULL);
 		}
 		else if(argv[loop][0] != FILE_CHAR) {
 			switch(argv[loop][1]) {
 			  case 'h': 	/* hostname */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Host Name Specified\n");
+					error_log(ERRLOG_REPORT, rpost_phrases[20], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else { 
@@ -531,7 +548,7 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 				
 			  case 'b':	/* batch file Mode, next arg = batch file */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Batch file Specified\n");
+					error_log(ERRLOG_REPORT, rpost_phrases[21], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else { 
@@ -540,7 +557,7 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 				break;
 			  case 'p':	/* specify directory prefix for files in batch file */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No prefix Supplied\n");
+					error_log(ERRLOG_REPORT, rpost_phrases[22], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -549,7 +566,7 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 				break;
 			  case 'f':	/* filter prg, rest of cmd line is args */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No args to use for filter\n");
+					error_log(ERRLOG_REPORT, rpost_phrases[23], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -560,11 +577,11 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 				}
 				break;
 			  case 'e':	/* use default error log path */
-				error_log(ERRLOG_SET_FILE, ERROR_LOG);
+				error_log(ERRLOG_SET_FILE, ERROR_LOG,NULL);
 				break;
 			  case 'E':	/* error log path */
 				if(loop+1 == argc) { 
-					error_log(ERRLOG_REPORT, "No Error Log name provided\n");
+					error_log(ERRLOG_REPORT, "%s\n",rpost_phrases[24],NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -573,17 +590,17 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 				break;
 		  	  case 's':	/* use default status log path */
 				if((myargs->status_fptr = fopen(STATUS_LOG, "a")) == NULL) {
-					MyPerror("rpost: Status Log");
+					MyPerror(rpost_phrases[25]);
 					retval = RETVAL_ERROR;
 				}
 				break;
 			  case 'S':	/* status log path */
 				if(loop+1 == argc) { 
-					error_log(ERRLOG_REPORT, "No Status Log name provided\n");
+					error_log(ERRLOG_REPORT, rpost_phrases[26],NULL);
 					retval = RETVAL_ERROR;
 				}	
 				else if((myargs->status_fptr = fopen(argv[++loop], "a")) == NULL) {
-					MyPerror("rpost: Status Log");
+					MyPerror(rpost_phrases[25]);
 					retval = RETVAL_ERROR;
 				}
 				break;
@@ -592,7 +609,7 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 				break;
 			  case 'U': 	/* next arg is userid for authorization */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Userid Specified\n");
+					error_log(ERRLOG_REPORT, rpost_phrases[27],NULL);
 					retval = RETVAL_ERROR;
 				}
 				else { 
@@ -601,7 +618,7 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 				break;
 			  case 'P': 	/* next arg is password for authorization */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Password Specified\n");
+					error_log(ERRLOG_REPORT, rpost_phrases[28],NULL);
 					retval = RETVAL_ERROR;
 				}
 				else { 
@@ -613,15 +630,24 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 				break;
 			  case 'N':	/* override port number */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No NNRP port Specified\n");
+					error_log(ERRLOG_REPORT, rpost_phrases[29],NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
 					myargs->portnr = atoi(argv[++loop]);
 				}
 				break;
+			  case 'l': 	/* language  phrase file */
+				if(loop+1 == argc) {
+					error_log(ERRLOG_REPORT, rpost_phrases[31],NULL);
+					retval = RETVAL_ERROR;
+				}
+				else {
+					myargs->phrases = argv[++loop];
+				}
+				break;
 			  default:
-				error_log(ERRLOG_REPORT, "Invalid argument, ignoring: %s\n", argv[loop]);
+				error_log(ERRLOG_REPORT, rpost_phrases[30], argv[loop],NULL);
 				break;
 			}
 		}
@@ -644,4 +670,44 @@ void log_fail(char *batch_file, char *article) {
 		fputs(article, fptr);
 		fclose(fptr);
 	}
-}	
+}
+
+/*--------------------------------------------------------------------------------*/
+/* THE strings in this routine is the only one not in the arrays, since           */
+/* we are in the middle of reading the arrays, and they may or may not be valid.  */
+/*--------------------------------------------------------------------------------*/
+void load_phrases(Pargs myargs) {
+
+	int error=TRUE;
+	FILE *fpi;
+
+	if(myargs->phrases != NULL) {
+		
+		if((fpi = fopen(myargs->phrases, "r")) == NULL) {
+			MyPerror(myargs->phrases);
+		}
+		else if((both_phrases = read_array(fpi, NR_BOTH_PHRASES, TRUE)) != NULL &&
+		        (rpost_phrases = read_array(fpi, NR_RPOST_PHRASES, TRUE)) != NULL) {
+			error = FALSE;
+		}
+		fclose(fpi);
+		if(error == TRUE) {
+			/* reset back to default */
+			error_log(ERRLOG_REPORT, "Using default Language phrases\n",NULL);
+			rpost_phrases = default_rpost_phrases;
+			both_phrases = default_both_phrases;
+		}
+	}		
+}
+/*--------------------------------------------------------------------------------*/
+void free_phrases(void) {
+		/* free up the memory alloced in load_phrases() */
+		if(rpost_phrases != default_rpost_phrases) {
+			free_array(NR_RPOST_PHRASES, rpost_phrases);
+		}
+		if(both_phrases != default_both_phrases) {
+			free_array(NR_BOTH_PHRASES, both_phrases);
+		}
+		
+}
+	

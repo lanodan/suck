@@ -13,6 +13,7 @@
 #include "both.h"
 #include "chkhistory.h"
 #include "suckutils.h"
+#include "phrases.h"
 
 #ifdef TIMER
 #include "timer.h"
@@ -29,20 +30,20 @@ void chkhistory(PMaster master) {
 	PList curr, prev;
 
 	if((fhist = fopen(HISTORY_FILE, "r")) == NULL) {
-		error_log(ERRLOG_REPORT, "Can not open %s, Skipping\n", HISTORY_FILE);
+		error_log(ERRLOG_REPORT, chkh_phrases[0], HISTORY_FILE, NULL);
 	}
 	else {
-		fprintf(master->msgs, "Processing History File - Old version ");
+		print_phrases(master->msgs, chkh_phrases[2], NULL);
 		fflush(master->msgs);	/* so msg gets printed */
 #ifdef TIMER
-		TimerFunc(TIMER_START, 0L);
+		TimerFunc(TIMER_START, 0L,NULL);
 #endif
 
 		/* read each line and check on our list */
 		while(fgets(linein, MAXLINLEN, fhist) != NULL) {
 			/* truncate at end of article-nr */
 			if((ptr = strchr(linein, '>'))  == NULL) {
-				error_log(ERRLOG_REPORT, "Bogus line, ignoring: %s", linein);
+				error_log(ERRLOG_REPORT, chkh_phrases[3], linein, NULL);
 			}
 			else {
 				*(ptr+1) = '\0';
@@ -79,10 +80,10 @@ void chkhistory(PMaster master) {
 			}			
 		}
 #ifdef TIMER
-		fprintf(master->msgs, "%s\n", TimerFunc(TIMER_TIMEONLY, 0l));
+		TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
 #endif
 		fclose(fhist);
-		fprintf(master->msgs, "Processed history, %d dupes removed\n", nrfound);
+		print_phrases(master->msgs, chkh_phrases[4], str_int(nrfound), NULL);
 	}
 }
 /*---------------------------------------------------------------------------------------------------------------*/
@@ -108,13 +109,13 @@ void chkhistory(PMaster master) {
 	} letters[NR_LETTERS];	
 
 	if((fhist = fopen(HISTORY_FILE, "r")) == NULL) {
-		error_log(ERRLOG_REPORT, "Can not open %s, Skipping\n", HISTORY_FILE);
+		error_log(ERRLOG_REPORT, chkh_phrases[0], HISTORY_FILE, NULL);
 	}
 	else {
-		fprintf(master->msgs, "Processing History File ");
+		print_phrases(master->msgs, chkh_phrases[1], NULL);
 		fflush(master->msgs);	/* so msg gets printed */
 #ifdef TIMER
-		TimerFunc(TIMER_START, 0L);
+		TimerFunc(TIMER_START, 0L, NULL);
 #endif
 		/* pass one */
 		/* count the letters, so we can build the array and also index it */
@@ -138,7 +139,7 @@ void chkhistory(PMaster master) {
 		/* pass two */
 		/* first malloc the array */
 		if ((lets = (PList *) calloc(master->nritems, sizeof(PList))) == NULL) {
-			error_log(ERRLOG_REPORT, "Out of Memory, skipping history check\n");
+			error_log(ERRLOG_REPORT, chkh_phrases[5], NULL);
 		}
 		else {
 			/* now put them in place */
@@ -155,7 +156,7 @@ void chkhistory(PMaster master) {
 			while(fgets(linein, MAXLINLEN, fhist) != NULL) {
 				j = (linein[1]) % NR_LETTERS;
 				if((ptr = strchr(linein, '>'))  == NULL) {
-					error_log(ERRLOG_REPORT, "Bogus line, ignoring: %s", linein);
+					error_log(ERRLOG_REPORT, chkh_phrases[3], linein, NULL);
 				}
 				else {
 					*(ptr+1) = '\0';
@@ -201,10 +202,10 @@ void chkhistory(PMaster master) {
 			free(lets);
 		}
 #ifdef TIMER
-		fprintf(master->msgs, "%s\n", TimerFunc(TIMER_TIMEONLY, 0l));
+		TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
 #endif
 		fclose(fhist);
-		fprintf(master->msgs, "Processed history, %d dupes removed\n", nrfound);
+		print_phrases(master->msgs, chkh_phrases[4], str_int(nrfound), NULL);
 	}
 }
 #endif /* CHECK_HISTORY_EXP */

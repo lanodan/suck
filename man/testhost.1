@@ -29,6 +29,10 @@ userid
 .BI -P
 password
 ]
+[
+.BI -l
+phrase_file
+]
 
 .SH OPTIONS
 -a     Get the active list from hostname
@@ -64,6 +68,13 @@ to the host, instead of the default, 119.
 
 These two options let you specify a userid and password, if your NNTP server
 requires them.
+
+\-l phrase_file
+
+This option tells testhost to load in an alternate phrase file, instead of using
+the built-in messages.  This allows you to have testhost print phrases in another
+language, or to allow you to customize the messages without re-building.
+See the "FOREIGN LANGUAGE PHRASES" in suck.1 for more details.
 
 
 .SH DESCRIPTION

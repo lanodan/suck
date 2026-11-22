@@ -1,5 +1,5 @@
 .\" Traduzione italiana di Giuseppe De Marco <gdm@rebel.net>
-.\" 4 Ottobre 1996 - Ultima modifica: 4 Novembre 1996
+.\" 4 Ottobre 1996 - Ultima modifica: 16 Marzo 1997
 
 .\" $Revision: 1.4 $
 .TH SUCK 1
@@ -20,6 +20,9 @@ hostname
 ]
 [
 .BI \-K
+]
+[
+.BI \-L
 ]
 [
 .BI \-H
@@ -77,7 +80,15 @@ port_number
 pause_time pause_nr_msgs
 ]
 [
+.BI \-w
+pause_time pause_nr_msgs
+]
+[
 .BI \-k
+]
+[
+.BI \-l
+phrase_file
 ]
 
 Opzioni valide in tutti i modi
@@ -144,6 +155,8 @@ più file sucknewsrc, uno per ogni sito.
 \-K
 	Questa opzione farà saltare a suck il controllo dei killfile.
 
+\-L
+	Questa opzione dice a suck di NON loggare in suck.killlog i messaggi killati.
 \-H
 	Questa opzione farà saltare a suck il controllo della history.
 
@@ -182,12 +195,32 @@ suck per 10 secondi ogni 100 messaggi.  Perché si dovrebbe farlo?  Suck
 puó provocare caricamenti intensi su un server remoto, e questa pausa
 permette al server di "riprendere fiato".
 
+\-w pause_timer pause_nr_msgs
+
+Questa opzione permette di rallentare suck mentre si stanno tirando i
+messaggi. Se si manda a suck un segnale predefinito (per default SIGUSR1,
+vedere suck_config.h), suck scambierà le opzioni di pausa di default (se
+specificate tramite l'opzione -W) con i valori di questa opzione.  Per
+esempio, avviando suck con -w 2 2, e mandando a suck un SIGUSR1 (usando
+kill), suck si fermerà per 2 secondi per ogni messaggio, permettendo al
+server di "riprendere fiato". Se si manda a suck un altro SIGUSR1, suck
+rimetterà le opzioni di pausa di default.  Se non erano state specificate
+opzioni di pausa sulla linea di comando (si era omesso -W), suck
+ricomincerà a tirare alla massima velocita' come di default.
+
 \-k
 
 Questa opzione è per il server NON-standard msnews.microsoft.com, che usa
 un valore di ritorno differente per il comando XHDR usato per prendere la lista
 degli article da downloadare.  Lo standard è 221, ma microsoft usa 224.  Questa
 opzione dice a suck di accettare il valore di ritorno 224 al posto di 221.
+
+\-l phrase_file
+
+Questa opzione dice a suck di caricare un file delle frasi alternativo, invece
+di usare i messaggi built-in.  Questo permette di fare stampare a suck le frasi
+in un'altra lingua, o permette di customizzare i messaggi senza ricompilare
+suck. Vedere sotto.
 
 .SH DESCRIZIONE
 
@@ -227,7 +260,7 @@ suck_config.h o dall'opzione di linea di comando \-dm.
 .RE
 .PP
 Suck prenderà gli article delle news da un server NNTP e li conserverà
-in tanti file, uno per ogni article (modo Multifile).  La locazione dei files
+in tanti file, uno per ogni article (modo Multifile).  La locazione dei file
 è basata sulle define in suck_config.h e sulla \-dm della riga di comando.  
 Una volta che suck avrà finito di downloadare gli article creerà un file
 batch, processabile da innxmit o da rnews.
@@ -242,7 +275,7 @@ A tal punto innxmit può essere chiamato:
 .RE
 
 \-br \- crea un file batch per rnews.  Gli article sono
-concatenati insieme, con il separatore di articles
+concatenati insieme, con il separatore di article
 #!rnews size.  Questo può essere dato in pasto ad rnews:
 
 .RS
@@ -311,17 +344,18 @@ recenti di quel newsgroup.
 Per dire a suck di skippare un newsgroup, mettere un # come primo carattere
 di una linea.
 
-.SH SUCKKILLFILE e GROUP KEEP/KILLFILES
+.SH SUCKKILLFILE e GROUP KEEP/KILLFILE
 Per usare le routine di killfile/keepfile, decommentare la linea
 .I #define KILLFILE
 in 
 .I suck_config.h.
 Allora, se
 .I suckkillfile
-esiste,  gli header di tutti gli article verranno esaminati, e gli articles
+esiste,  gli header di tutti gli article verranno esaminati, e gli article
 downloadati o meno, in base ai parametri nei file.  Gli header di eventuali
 article non downloadati verranno loggati in 
-.I suck.killlog.
+.I suck.killlog a meno che non si specifichi l'opzione -L sulla linea di comando,
+nel quale caso gli header NON verranno loggati.
 Quindi si può downloadare questi article mettendo i loro
 Message-ID nel file suckothermsgs.
 .PP
@@ -364,6 +398,18 @@ GROUP=delete groupname filename
 NRGRPS=########
 .RE
 .RS
+PATH_SEP=c
+.RS
+.RE
+SUBJECT_SEP=c
+.RE
+.RS
+FROM_SEP=c
+.RE
+.RS
+NNTPHOST_SEP=c
+.RE
+.RS
 PROGRAM=pathname
 .RE
 .SH Parametri dei File di KILL/KEEP
@@ -391,6 +437,7 @@ carattere di QUOTE, allora l'item è controllato senza guardare alle
 maiuscole/minuscole.  Se suck era stato compilato con USE_REGEX (vedere
 suck_config.h), allora questi item possono essere delle POSIX regular
 expression.
+La virgola come separatore può essere cambiata attraverso l'opzione "*_SEP" qui sotto.
 .PP
 .I GROUP=
 Questa linea permette di specificare uno dei due parametri keep e delete su una
@@ -408,6 +455,14 @@ Questa linea matcherà ogni article che ha più gruppi del numero specificato.
 Tipicamente questo in un killfile è usato per evitare i messaggi spammed.
 (Un messaggio si dice spammed quando è postato in moltissimi gruppi, tipo
 quegli schemi diventa-ricco-velocemente, etc.)
+.PP
+.I PATH_SEP=
+.I SUBJECT_SEP=
+.I FROM_SEP=
+.I NNTPHOST_SEP=
+Queste linee permettono di cambiare il separatore di default (una virgola) per le
+precedenti opzioni PATH, SUBJECT, FROM, e NNTPHOST.  Il cambiamento è effettivo
+solo per le linee che seguono queste nel killfile.
 .PP
 .I PROGRAM=
 Questa linea permette a suck di chiamare un programma esterno per controllare
@@ -449,19 +504,53 @@ nel kill file principale.
 Se
 .I suckothermsgs
 esiste, deve contenere una lista di Message-ID, uno per linea, inclusi i <>.
-Questi article verranno allora downloadati, in aggiunta ad eventuali articles
+Questi article verranno allora downloadati, in aggiunta ad eventuali article
 generati processando il file
 .IR sucknewsrc .
 Questo può essere usato per prendere article in altri gruppi,
-o per downloadare un article che era stato killato.  Questi articles
+o per downloadare un article che era stato killato.  Questi article
 .B NON SONO
 processati attraverso le routine di killing degli article.
+.SH FRASI IN UNA LINGUA STRANIERA
+Se l'opzione
+.BI "-l phrases"
+è specificata, suck caricherà un file delle frasi di una lingua alternativa, e
+lo userà per tutti i messaggi di stato & di errore, invece dei default built-in.
+Il file delle frasi contiene tutti i messaggi usati da suck, rpost, e testhost,
+ognuno su una linea separata e racchiusa tra virgolette.  Per generare un file
+di frasi di esempio, avviare
+.BI "make phrases"
+dalla linea di comando.  Questo creerà "phrases.engl", che è una lista delle frasi
+di default.  Semplicemente si editi questo file, cambiando le frasi dall'inglese
+a quelle della lingua che si desidera, assicurandosi di tenere le frasi tra virgolette.
+Queste frasi possono contenere variabili per stampare item forniti dal programma, tipo
+un hostname.  Le variabili sono indicate da %vN% dove N è una sequenza da uno in su
+per frase.  Queste variabili possono esistere in qualsiasi ordine sulla linea della
+frase, per esempio,
+.RS
+"Salve, %v1%, benvenuto a %v2%"         o
+.RE
+.RS
+"Benvenuto a %v2%, %v1%"
+.RE
+sono entrambe frasi valide.  Le frasi possono contenere,  \\n, \\r, or \\t per stampare un
+newline, carriage return, o tab, rispettivamente.
+
+Se si modifica qualcosa del source code, e si aggiungono nuove frasi, si avrà bisogno
+di rigenerare phrases.h, così che ogni cosa funzioni correttamente.  Per ricrearlo,
+basta avviare
+.BI "make phrases.h"
+dalla linea di comando.
 .SH GESTIONE DEI SEGNALI
-Suck accetta un segnale, definito in
+Suck accetta due segnali, definiti in
 .I suck_config.h.
-Si può mandare tale segnale a suck, ed esso finirà di downloadare il corrente
-article, batcherà qualsivoglia articoli siano stati downloadati, ed
-uscirà senza alcun errore. 
+Il primo segnale (SIGTERM per default) farà finire a Suck di downloadare il corrente
+article, batchare qualsivoglia articoli siano stati downloadati, ed
+uscire, senza alcun errore. 
+
+Il secondo segnale (SIGUSR1 per default) farà usare a suck i valori di pausa definiti
+con l'opzione -w (vedere sopra).
+
 .SH CODICI DI USCITA
 Suck uscirà con i seguenti valori di ritorno:
 .RS
@@ -488,7 +577,7 @@ remoto.
 Autore Originale - Tim Smith (indirizzo sconosciuto)
 .RE
 .RS
-Mantenitori - 
+Manutentori - 
 .RE
 .RS
 Marzo 1995 - Sven Goldt (goldt@math.tu-berlin.de)

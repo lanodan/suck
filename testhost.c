@@ -18,11 +18,17 @@
 # endif
 #endif
 #include <string.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <ctype.h>
 #include "both.h"
 #include "suck_config.h"
+#include "phrases.h"
+
+/* set up defaults */
+char **test_phrases=default_test_phrases;
+char **both_phrases=default_both_phrases;
 
 #define MAXCMDLEN 128	/* length of longest command to send + its args */
 struct {
@@ -40,6 +46,8 @@ enum { RETVAL_OK = 0, RETVAL_ERROR = -1, RETVAL_BAD_DATES = -2, RETVAL_NOAUTH = 
 /*-functions----*/
 int do_a_command(int, int, FILE *, char *, char *, char *);
 int check_date_format(char *, char *, char *);
+void load_phrases(char *);
+void free_phrases(void);
 
 /*------------------------------------------------------------------*/
 void main(int argc, char *argv[]) {
@@ -49,7 +57,7 @@ void main(int argc, char *argv[]) {
 	unsigned short int portnr;
 	FILE *fptr = stdout;		/* used to print output to */
 
-	char *host, *buf, *ptr, *cmdargs, *userid, *passwd;
+	char *host, *buf, *ptr, *cmdargs, *userid, *passwd, *phrases;
 	char ndate[14];	/* 6 for yymmdd 6 for hhmmss and 1 for space and 1 for null */
 
 	/* set up defaults */
@@ -60,6 +68,7 @@ void main(int argc, char *argv[]) {
 	portnr = DEFAULT_NNRP_PORT;
 	passwd = NULL;
 	userid = NULL;
+	phrases = NULL;
 
 	if(argc > 1 && argv[loop][0] != '-') {
 		host = argv[loop++];
@@ -74,7 +83,7 @@ void main(int argc, char *argv[]) {
 				cmd = CMD_NEWGRP;
 				/* next two args must be date & time YYMMDD HHMMSS format */
 				if(loop + 2 > argc) {
-					error_log(ERRLOG_REPORT, "Need date time args (YYMMDD HHMMSS) \n");
+					error_log(ERRLOG_REPORT, test_phrases[0], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -82,42 +91,42 @@ void main(int argc, char *argv[]) {
 						cmdargs = ndate;
 					}
 					else {
-						error_log(ERRLOG_REPORT, "Invalide date time args: %s %s\n", argv[loop+1], argv[loop+2]);
+						error_log(ERRLOG_REPORT, test_phrases[1], argv[loop+1], argv[loop+2], NULL);
 					}
 					loop += 2;	/* past the args if there, if not this will finish up the arg loop */
 				}
 				break;
 			  case 'e':	/* use default error log path */
-				error_log(ERRLOG_SET_FILE, ERROR_LOG);
+				error_log(ERRLOG_SET_FILE, ERROR_LOG, NULL);
 				break;
 			  case 'E':	/* error log path */
 				if(loop+1 == argc) { 
-					error_log(ERRLOG_REPORT, "No Error Log name provided\n");
+					error_log(ERRLOG_REPORT, test_phrases[2], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
-					error_log(ERRLOG_SET_FILE, argv[++loop]);
+					error_log(ERRLOG_SET_FILE, argv[++loop], NULL);
 				}
 				break;
 			  case 's':	/* use default status log path */
 				if((fptr = fopen(STATUS_LOG, "a")) == NULL) {
-					MyPerror("testhost: Status Log");
+					MyPerror(test_phrases[3]);
 					retval = RETVAL_ERROR;
 				}
 				break;
 			  case 'S':	/* status log path */
 				if(loop+1 == argc) { 
-					error_log(ERRLOG_REPORT, "No Status Log name provided\n");
+					error_log(ERRLOG_REPORT, test_phrases[12], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else if((fptr = fopen(argv[++loop], "a")) == NULL) {
-					MyPerror("testhost: Status Log");
+					MyPerror(test_phrases[3]);
 					retval = RETVAL_ERROR;
 				}
 				break;
 			  case 'N':	/* override port nr */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No port number provided\n");
+					error_log(ERRLOG_REPORT, test_phrases[4], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else {
@@ -126,7 +135,7 @@ void main(int argc, char *argv[]) {
 				break;
 			  case 'U': 	/* next arg is userid for authorization */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Userid Specified\n");
+					error_log(ERRLOG_REPORT, test_phrases[5], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else { 
@@ -135,25 +144,36 @@ void main(int argc, char *argv[]) {
 				break;
 			  case 'P': 	/* next arg is password for authorization */
 				if(loop+1 == argc) {
-					error_log(ERRLOG_REPORT, "No Password Specified\n");
+					error_log(ERRLOG_REPORT, test_phrases[6], NULL);
 					retval = RETVAL_ERROR;
 				}
 				else { 
 					passwd = argv[++loop];
 				}
 				break;
+			  case 'l': 	/* next arg is phrases file */
+				if(loop+1 == argc) {
+					error_log(ERRLOG_REPORT, test_phrases[11], NULL);
+					retval = RETVAL_ERROR;
+				}
+				else { 
+					phrases = argv[++loop];
+				}
+				break;
 			  default:
 				retval = RETVAL_ERROR;
-				error_log(ERRLOG_REPORT, "Invalid argument: %s\n", argv[loop]);
+				error_log(ERRLOG_REPORT, test_phrases[7], argv[loop], NULL);
 			}
 		}
 		else {
 			retval = RETVAL_ERROR;
-			error_log(ERRLOG_REPORT, "Invalid argument: %s\n", argv[loop]);
+			error_log(ERRLOG_REPORT, test_phrases[7], argv[loop], NULL);
 		}
 	}
 
 	if(retval == RETVAL_OK) {
+		load_phrases(phrases);	/* this is here so everything displays okay */
+
 		sockfd = connect_to_nntphost( host, &hi, fptr, portnr);
 		if(sockfd < 0 ) {
 			retval = RETVAL_ERROR;
@@ -175,12 +195,13 @@ void main(int argc, char *argv[]) {
 			}
 		}
 		if(retval == RETVAL_ERROR) {
-			error_log(ERRLOG_REPORT, "Error talking to host %s\n", host);
+			error_log(ERRLOG_REPORT, test_phrases[8], host, NULL);
 		}
 	}
 	if(fptr != stdout && fptr != NULL) {
 		fclose(fptr);
 	}
+	free_phrases();	/* do this last so everything is displayed correctly */
 	exit(retval);
 }
 /*-------------------------------------------------------------------------------*/
@@ -211,7 +232,7 @@ int do_a_command(int sockfd, int cmd, FILE *fptr, char *cmdargs, char *userid, c
 		else {
 			ptr  = number(buf, &response);
 			if(response != 381) {
-				error_log(ERRLOG_REPORT, "Weird Response to Authorization: %s", buf);
+				error_log(ERRLOG_REPORT, test_phrases[9], buf, NULL);
 				retval = RETVAL_NOAUTH;
 			}
 			else {
@@ -236,10 +257,10 @@ int do_a_command(int sockfd, int cmd, FILE *fptr, char *cmdargs, char *userid, c
 						break;
 					  case 502: /* permission denied */
 						retval = RETVAL_NOAUTH;
-						error_log(ERRLOG_REPORT, "Authorization Denied");
+						error_log(ERRLOG_REPORT, test_phrases[10], NULL);
 						break;
 					  default: /* wacko error */
-						error_log(ERRLOG_REPORT, "Weird Response to Authorization: %s", ptr);
+						error_log(ERRLOG_REPORT, test_phrases[9], ptr, NULL);
 						retval = RETVAL_NOAUTH;
 						break;
 					}
@@ -248,7 +269,7 @@ int do_a_command(int sockfd, int cmd, FILE *fptr, char *cmdargs, char *userid, c
 		}
 	}
 	if(cmds[cmd].response != response) {
-		error_log(ERRLOG_REPORT, "%s\n", buf);
+		error_log(ERRLOG_REPORT, "%v1%\n", buf, NULL);
 		retval = RETVAL_ERROR;
 	}
 	else {
@@ -301,6 +322,46 @@ int check_date_format(char *dates, char *indate, char *intime) {
 		sprintf(dates, "%s %s", indate, intime);
 	}
 	return retval;
+}
+/*--------------------------------------------------------------------------------*/
+/* THE strings in this routine is the only one not in the arrays, since           */
+/* we are in the middle of reading the arrays, and they may or may not be valid.  */
+/*--------------------------------------------------------------------------------*/
+void load_phrases(char *phrases) {
+
+	int error=TRUE;
+	FILE *fpi;
+
+	if(phrases != NULL) {
+		
+		if((fpi = fopen(phrases, "r")) == NULL) {
+			MyPerror(phrases);
+		}
+		else if((both_phrases = read_array(fpi, NR_BOTH_PHRASES, TRUE)) != NULL) {
+			read_array(fpi, NR_RPOST_PHRASES, FALSE);	/* skip these */
+			if((test_phrases = read_array(fpi, NR_TEST_PHRASES, TRUE)) != NULL) {
+				error = FALSE;
+			}
+		}
+		fclose(fpi);
+		if(error == TRUE) {
+			/* reset back to default */
+			error_log(ERRLOG_REPORT, "Using default Language phrases\n", NULL);
+			test_phrases = default_test_phrases;
+			both_phrases = default_both_phrases;
+		}
+	}		
+}
+/*--------------------------------------------------------------------------------*/
+void free_phrases(void) {
+		/* free up the memory alloced in load_phrases() */
+		if(test_phrases != default_test_phrases) {
+			free_array(NR_TEST_PHRASES, test_phrases);
+		}
+		if(both_phrases != default_both_phrases) {
+			free_array(NR_BOTH_PHRASES, both_phrases);
+		}
+		
 }
 		
 		

@@ -15,6 +15,11 @@ void error_log(int mode, const char *fmt, ...);
 void MyPerror(const char *);
 void free_args(int, char *[]);
 char **build_args(const char *, int *);
+char **read_array(FILE *, int, int);
+void free_array(int, char **);
+char *do_a_phrase(char []);
+void print_phrases(FILE *, const char *, ...);
+char *str_int(int);
 
 enum { MYSIGNAL_SETUP, MYSIGNAL_BLOCK, MYSIGNAL_UNBLOCK, MYSIGNAL_ADDPIPE };
 enum { ERRLOG_SET_FILE, ERRLOG_SET_STDERR, ERRLOG_REPORT };

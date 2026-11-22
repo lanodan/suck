@@ -18,6 +18,9 @@ hostname
 .BI \-K
 ]
 [
+.BI \-L
+]
+[
 .BI \-H
 ]
 [
@@ -73,7 +76,15 @@ port_number
 pause_time pause_nr_msgs
 ]
 [
+.BI \-w
+pause_time pause_nr_msgs
+]
+[
 .BI \-k
+]
+[
+.BI \-l
+phrase_file
 ]
 
 Options valid in all modes
@@ -141,6 +152,9 @@ multiple sucknewsrc files, one for each site.
 \-K
 	This option will cause suck to bypass checking the killfile(s).
 
+\-L
+	This option tells suck to NOT log killed messages to suck.killlog.
+
 \-H
 	This option will cause suck to bypass the history check.
 
@@ -178,12 +192,31 @@ of messages). Ex: \-W 10 100 would cause suck to pause for 10 seconds every
 100 messages.  Why would you want to do this?  Suck can cause heavy loads on 
 a remote server, and this pause allows the server to "catch its breath."
 
+\-w pause_timer pause_nr_msgs
+
+This option allows you to slow down suck while pulling messages.  If you
+send suck a predefined signal (default SIGUSR1, see suck_config.h),
+suck will swap the default pause options (if specified by the -W option),
+with the values from this option.  For example, you run suck with -w 2 2,
+and you send suck a SIGUSR1 (using kill), suck will then pause 2 seconds
+between every other message, allowing the server to "catch its breath."
+If you send suck another SIGUSR1, then suck will put back the default
+pause options.  If no pause options were specified on the command line
+(you omitted -W), then suck will return to the default full speed pull.
+
 \-k 
 
 This option is for the NON-standard msnews.microsoft.com server, which uses
 a different return value for the XHDR command used to get the list of
 articles to download.  The standard is 221, but microsoft uses 224.  This option
 tells suck to accept the 224 return value instead of 221.
+
+\-l phrase_file
+
+This option tells suck to load in an alternate phrase file, instead of using
+the built-in messages.  This allows you to have suck print phrases in another
+language, or to allow you to customize the messages without re-building suck.
+See below.
 
 .SH DESCRIPTION
 
@@ -317,7 +350,8 @@ exists,  the headers of
 all articles will be scanned and the article downloaded or not, 
 based on the parameters in the files.  Any articles not downloaded
 have the headers logged to
-.I suck.killlog.
+.I suck.killlog unless you specify the -L option on the command line,
+then the headers are NOT logged.
 You can then download these articles by putting their
 Message-IDs in the suckothermsgs file.
 .PP
@@ -361,6 +395,18 @@ GROUP=delete groupname filename
 NRGRPS=########
 .RE
 .RS
+PATH_SEP=c
+.RS
+.RE
+SUBJECT_SEP=c
+.RE
+.RS
+FROM_SEP=c
+.RE
+.RS
+NNTPHOST_SEP=c
+.RE
+.RS
 PROGRAM=pathname
 .RE
 .SH KILL/KEEP Files Paramaters
@@ -387,6 +433,7 @@ specified above), then the item is checked as-is (case significant).  If
 an item does not start with a QUOTE character, then the item is checked with
 out regard to case.  If suck was compiled with USE_REGEX (see suck_config.h), 
 then these items can be POSIX regular expressions.
+The comma as the separator can be changed via the "*_SEP" options below.
 .PP
 .I GROUP=
 This line allows you to specify either keep or delete parameters on a group
@@ -402,6 +449,14 @@ This line will match any article which has more groups than the number specified
 Typically this is used in a killfile to prevent spammed messages.
 (A spammed message is one that is posted to many, many groups, such
 as those get-rich quick schemes, etc.)
+.PP
+.I PATH_SEP=
+.I SUBJECT_SEP=
+.I FROM_SEP=
+.I NNTPHOST_SEP=
+These lines allow you to change the default separator (a comma) for the PATH, SUBJECT,
+FROM, and NNTPHOST options above.  The change is effective only for lines that follow
+these in the killfile.
 .PP
 .I PROGRAM=
 This line allows suck to call an external program to check each article.
@@ -448,12 +503,43 @@ file.  This can be used to get articles in other groups,
 or to download an article that was killed.  These articles
 .B ARE NOT
 processed through the kill articles routines.
+.SH FOREIGN LANGUAGE PHRASES
+If the
+.BI "-l phrases"
+option is specified, suck will load an alternate language phrase file, and use it
+for all status & error messages, instead of the built-in defaults.  The phrase file
+contains all messages used by suck, rpost, and testhost, each on a separate line
+and enclosed in quotes.  To generate a sample phrase file, run
+.BI "make phrases"
+from the command line.  This will create "phrases.engl", which is a list of the default
+phrases.  Simply edit this file, changing the english phrases to the language of
+your choosing, being sure to keep the phrases within the quotes.  These phrases may 
+contain variables to print items provided by the program, such as hostname.  Variables
+are designated by %vN% where N is a one-up sequence per phrase.  These variables may
+exist in any order on the phrase line, for example, 
+.RS
+"Hello, %v1%, welcome to %v2%" 	or
+.RE
+.RS
+"Welcome to %v2%, %v1%"	
+.RE
+are both valid phrases.  Phrases may contain,  \\n, \\r, or \\t to print a newline, carriage return,
+or tab, respectively.
+
+If you modify any of the source code, and add in new phrases, you will need to regenerate
+phrases.h, so that everything works correctly.  To recreate, just run
+.BI "make phrases.h"
+from the command line.
 .SH SIGNAL HANDLING
-Suck accepts one signal, defined in
+Suck accepts two signals, defined in
 .I suck_config.h.
-You can send this signal to suck, and it will finish download the
+The first signal (default SIGTERM) will cause Suck to finish downloading the
 current article, batch up whatever articles were downloaded, and
 exit, without an error.
+
+The second signal (default SIGUSR1) will cause suck to use the pause values defined with
+the -w option (see above).
+
 .SH EXIT CODES
 Suck will exit with the following return codes:
 .RS

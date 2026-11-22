@@ -1,6 +1,100 @@
 
 CHANGES
 =======
+
+--Changes in Suck-3.4.0
+both.c - vprint_phrases() - rewrote to handle a couple of bugs,
+	1, if len = PHRASES_BLOCK_SIZE then no null termination,
+	2, if string arg > PHRASES_BLOCK_SIZE, infinite looped.
+
+suck.c - free_phrases() - fix typos of free_array() call for
+	dedupe_phrases which caused a SIGBUS error.
+       - get_message_index() - fix bugs in error_log() call for
+	 error messages for group command
+       - main() - handle suck -V  to correctly display version
+	 number without putting a hostname in.
+
+31 Mar 97 - suck-3.4.1 released
+
+--Changes in Suck-3.3.2
+
+*.* - Tweaks to various configs to make more portable.
+
+*.c - got rid of all lingering \r\n in log and status messages.
+      Added #define <sys/types.h> before sys/stat.h in various .c
+      files, for more portability (Ultrix needs this).
+
+ phrases.h
+*phrases.c - created.  This is the code that loads in the language
+	phrases, so you can rewrite the screen messages into
+	another language, or just rewrite them.  This necessitated
+	changing every print to a screen to call print_phrases().
+
+both.c  - read_array(), do_a_phrases(), free_array(),
+	convert_nl() - added.
+	These are used by the load_phrases() routines to
+	read in one array and alloc the memory for each phrases.
+	- print_phrases() vprint_phrases(), str_int() - added.
+	These routines print the phrases out with vars included.
+	- signal_block() - added code to block PAUSESIGNAL.
+	- error_log() - modified to call vprint_phrases() so that
+	phrases print correctly.
+
+killfile.c - parse_killfile(), chk_msg_kill() - changed killfile
+	logging from a command time to run time argument, added
+	logyn to Master killfile structure.
+	regex_scan() - fixed bug in handling quote character
+	check_a_group() -  changed \r to \n in checking nr of groups
+	check_a_group(), parse_a_file() - added code to handle
+	pathhost, subject, from, and nntp separators in group killfile.
+
+rpost.c - main(), scan_args() - added stuff to process language 
+	file.
+	- free_phrases() - added, frees up memory from language file
+	load.
+	- load_phrases() - added, loads in the language file.
+
+suck.c - main(), scan_args() - added code to pass killog_yn to
+	killfile routines.  Added coded to process language file.
+	Added coded to set up PAUSESIGNAL.
+
+	- get_message_index() - fixed bugs in writing suck.newrc,
+	one where if invalid line, and one where maxread was
+	never getting written back out.  Also fixed bug in notting
+	writing out line if error from server.  Fixed bug in 
+	writing file where the cmd was written instead of line from
+	file.  Fixed bug where could write to a NULL fp at end of
+	routine.
+
+	- get_articles() - rewrote way I calculate width of nritems
+	for screen display, got rid of the log10() call, making
+	the math lib (-lm) unnecessary.
+	
+	- load_phrases() - added, loads in the language file.
+	- free_phrases() - added, frees up memory from language file
+	load.
+
+	- restart_yn() - fix bug in print of error message which
+	  caused it not to show the path of the suck.restart file,
+	  but rather show suck.sorted twice.
+
+	- sighandler() - added code to handle PAUSESIGNAL
+
+	- pause_signal() - created, swap pause_* with sig_* if we
+	  are called by signal handler.  This allows the user to
+	  slow down suck while we are running.
+ 
+testhost.c - main() - added coded to process language file.
+
+	- load_phrases() - added, loads in the language file.
+	- free_phrases() - added, frees up memory from language file
+	load.
+
+timer.c - TimerFunc() - changed to write to file vice string, so can
+	call print_phrases()
+
+16 Mar 97 - suck-3.4.0 released
+
 --Changes in Suck-3.3.1
 
 killfile.c - regex_scan() - fixed bug which caused it to scan

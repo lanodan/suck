@@ -11,6 +11,7 @@
 #include "both.h"
 #include "chkhistory.h"
 #include "suckutils.h"
+#include "phrases.h"
 
 #ifdef TIMER
 #include "timer.h"
@@ -56,14 +57,14 @@ void chkhistory(PMaster master) {
 	int nrfound = 0;
 
 	if(open_history() != TRUE) {
-		fprintf(master->msgs, "Unable to open %s\n", HISTORY_FILE);
+		error_log(ERRLOG_REPORT, chkh_phrases[0], HISTORY_FILE, NULL);
 	}
 	else {
 
-		fprintf(master->msgs, "Processing History Database ");
+		print_phrases(master->msgs, chkh_phrases[6], NULL);
 		fflush(master->msgs);	/* so msg gets printed */
 #ifdef TIMER
-		TimerFunc(TIMER_START, 0L);
+		TimerFunc(TIMER_START, 0L, NULL);
 #endif
 
 		/* okay cycle thru our list, checking each against the history DB */
@@ -97,10 +98,10 @@ void chkhistory(PMaster master) {
 			}
 		}
 #ifdef TIMER
-		fprintf(master->msgs, "%s\n", TimerFunc(TIMER_TIMEONLY, 0l));
+		TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
 #endif
 		close_history();
-		fprintf(master->msgs, "Processed history, %d dupes removed\n", nrfound);
+		print_phrases(master->msgs, chkh_phrases[4], str_int(nrfound), NULL);
 	}
 	return;
 }

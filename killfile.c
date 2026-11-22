@@ -18,14 +18,15 @@
 #include "suck.h"
 #include "suckutils.h"
 #include "killfile.h"
+#include "phrases.h"
 #ifdef TIMER
 #include "timer.h"
 #endif
 
-#define PATHHOST_SEPARATOR ','		/* character used to separate hosts in the pathhost line in killfile */
-#define SUBJECT_SEPARATOR ','		/* character used to separate words in the subject line in killfile */
-#define FROM_SEPARATOR ','		/* character used to separate words in the subject line in killfile */
-#define NNTP_SEPARATOR ','		/* character used to separate names in the nntphost line in killfile */
+#define DEFAULT_PATHHOST_SEP ','		/* character used to separate hosts in the pathhost line in killfile */
+#define DEFAULT_SUBJECT_SEP ','		/* character used to separate words in the subject line in killfile */
+#define DEFAULT_FROM_SEP ','		/* character used to separate words in the subject line in killfile */
+#define DEFAULT_NNTP_SEP ','		/* character used to separate names in the nntphost line in killfile */
 
 #define GROUP_KEEP "keep"
 #define GROUP_DELETE "delete"		/* word in param file parsed for on group line to signify keep or delete */
@@ -47,18 +48,7 @@ int regex_check(char *, const char *, pmy_regex);
 char *malloc_line(int which, const char *linein);
 #endif
 /*-------------------------------------------------------------------------*/
-const char *Reasons[] = {
-	"No Reason - major screwup",
-	"Over Hi-Line paramter",
-	"Under Low-Line parameter",
-	"Host in Path rejected",
-	"Word in Subject rejected",
-	"Name in From rejected",
-	"Name in NNTP_Host rejected",
-	"Too many Newsgroups",
-	"Not matched in Group Keep file",
-	"Multiple Matches/Tiebreaker Used"
-};
+/* the enum must match the phrases in suckengl.c  killf_reasons[] */
 enum { REASON_NONE, REASON_TOOMANYLINES, REASON_NOTENUFLINES, REASON_PATHHOST,
 REASON_SUBJECT, REASON_FROM, REASON_NNTPHOST, REASON_NRGRPS, REASON_NOKEEP, REASON_TIE};
 enum { CHECK_EXACT, CHECK_CHECK };
@@ -78,27 +68,34 @@ const struct {
 	{8, "NNTPHOST=", 19,"NNTP-Posting-Host: "},
 	{6, "GROUP=", 0, ""},
 	{6, "QUOTE=", 0, ""},
-	{8, "PROGRAM=", 0, ""}
+	{8, "PROGRAM=", 0, ""},
+	{9, "PATH_SEP=", 0, ""},
+	{12,"SUBJECT_SEP=", 0, ""},
+	{9, "FROM_SEP=", 0, ""},
+	{13,"NNTPHOST_SEP=", 0, ""}
 };
 
 
-enum { PARAM_HILINE, PARAM_LOWLINE, PARAM_PATH, PARAM_SUBJ, PARAM_FROM, PARAM_NRGRPS, PARAM_HOST, PARAM_GROUP, PARAM_QUOTE, PARAM_PROGRAM};
+enum { PARAM_HILINE, PARAM_LOWLINE, PARAM_PATH, PARAM_SUBJ, PARAM_FROM, PARAM_NRGRPS, PARAM_HOST, PARAM_GROUP, PARAM_QUOTE,
+ PARAM_PROGRAM, PARAM_PATHHOST_SEP, PARAM_SUBJECT_SEP, PARAM_FROM_SEP, PARAM_NNTP_SEP};
 #define NR_PARAMS ((int) (sizeof(Params)/sizeof(Params[0])))
 
 enum { DELKEEP_KEEP, DELKEEP_DELETE };
 /*--------------------------------------------------------------------------*/
-PKillStruct parse_killfile() {
+PKillStruct parse_killfile(int logfile_yn) {
 	FILE *fptr;
 	char buf[MAXLINLEN+1];
 	int doprg = FALSE, retval = TRUE;
 
-	static KillStruct Masterkill = { 0, NULL, chk_msg_kill };	/* initialize everything first */
+	static KillStruct Masterkill = { TRUE, 0, NULL, chk_msg_kill };	/* initialize everything first */
 
 	/* kill file is going to get three passes, 1st one to count how many group files to process */
 	/* so can allocate memory for all the group stuff. */
 	/* also process PROGRAM line if it exists.  If we have one we don't do anything else */
 	/* 2nd pass will be to actually process the group files */
 	/* 3rd pass will be to process the master delete stuff */
+
+	Masterkill.logyn = logfile_yn;
 	
 	/* FIRST PASS THRU MASTER KILLFILE - look for group delete/keeps and count em  and check for PROGRAM call*/
 	if((fptr = fopen(full_path(FP_GET, FP_DATADIR, N_KILLFILE), "r")) == NULL) {
@@ -161,7 +158,7 @@ int pass_two(PKillStruct killp ) {
 	/* and then have parse_a_file read em in. */
 	if((killp->grps = calloc((size_t) killp->totgrps, sizeof(Group))) == NULL) {
 		retval = RETVAL_ERROR;
-		error_log(ERRLOG_REPORT, "Out of memory, can't do killfiles\n");
+		error_log(ERRLOG_REPORT, killf_phrases[1], NULL);
 	}
 	else if((fptr = fopen(full_path(FP_GET, FP_DATADIR, N_KILLFILE), "r")) == NULL) {
 		MyPerror(full_path(FP_GET, FP_DATADIR, N_KILLFILE));
@@ -213,12 +210,12 @@ int pass_two(PKillStruct killp ) {
 
 				}
 				if(retval == RETVAL_ERROR) {
-					error_log(ERRLOG_REPORT, "Invalid Parameter Line: %s\n", buf);
+					error_log(ERRLOG_REPORT, killf_phrases[2], buf);
 				}
 				else {	/* have all three params, put them in place and parse the file */
 					/* +1 for newline */
 					if((killp->grps[grpon].group = malloc(strlen(grpname)+1)) == NULL) {
-						error_log(ERRLOG_REPORT, "Out of Memory");
+						error_log(ERRLOG_REPORT, killf_phrases[0], NULL);
 						retval = RETVAL_ERROR;
 					}
 					else {
@@ -319,7 +316,6 @@ int get_one_article_kill(PMaster master, int logcount, PKillStruct killp) {
 		if((inbuf = get_a_chunk_mem(master)) == NULL) {
 			retval = RETVAL_ERROR;
 		}
-		/*else if(chk_msg_kill(killp, inbuf)==FALSE){*/
 		/* the killfunc pointer points to either chk_msg_kill() or chk_msg_kill_fork() */
 		  else if((*killp->killfunc)(killp, inbuf) == FALSE) {
 			if(master->MultiFile == TRUE) {
@@ -400,13 +396,13 @@ char *get_a_chunk_mem(PMaster master) {
 		do_debug("allocing memory, size = %d\n", bufsize);
 #endif
 		if((buf=malloc((size_t) bufsize)) == NULL) {
-			error_log(ERRLOG_REPORT, "Out of Memory");
+			error_log(ERRLOG_REPORT, killf_phrases[0], NULL);
 		}
 	}
 	while(buf != NULL && done == FALSE) {
 		len=sgetline(master->sockfd, &inbuf);
 #ifdef TIMER
-		(void) TimerFunc(TIMER_ADDBYTES, len);
+		(void) TimerFunc(TIMER_ADDBYTES, len, NULL);
 #endif
 		if(len < 0) {
 			free(buf);
@@ -432,7 +428,7 @@ char *get_a_chunk_mem(PMaster master) {
 				if((newbuf = realloc(buf, (size_t) bufsize)) == NULL) {
 					free(buf);
 					buf = NULL;
-					error_log(ERRLOG_REPORT, "Out of Memory");
+					error_log(ERRLOG_REPORT, killf_phrases[0], NULL);
 #ifdef DEBUG2
 					do_debug("Re-alloc failed\n");
 #endif
@@ -448,6 +444,9 @@ char *get_a_chunk_mem(PMaster master) {
 				strcpy(buf+currbuf, inbuf);
 				currbuf += len;
 				partial= (len==MAXLINLEN&&inbuf[len-1]!='\n') ? TRUE : FALSE;
+#ifdef DEBUG2
+				do_debug("changing partial to %s\n", (partial == TRUE) ? "TRUE" : "FALSE" );
+#endif
 			}
 		}
 	}
@@ -460,10 +459,7 @@ int chk_msg_kill(PKillStruct killp, char *headerbuf) {
 
 	int why, goodwhy, killyn, i, del, keep, match;
 	const char *group = "Master";
-
-#ifdef KILLFILE_LOG
 	FILE *fptr;
-#endif
 
 	goodwhy = why = REASON_NONE;
 
@@ -521,18 +517,16 @@ int chk_msg_kill(PKillStruct killp, char *headerbuf) {
 #endif
 		}
 	}
-#ifdef KILLFILE_LOG
-	if(killyn == TRUE) {
+	if(killyn == TRUE && killp->logyn == TRUE) {
 		/* log it */
 		if((fptr = fopen(full_path(FP_GET, FP_TMPDIR, N_KILLLOG), "a")) == NULL) {
-			MyPerror("Unable to log killed article");
+			MyPerror(killf_phrases[3]);
 		}
 		else {
-			fprintf(fptr, "ARTICLE KILLED: %s - %s\n%s\n", group, Reasons[why], headerbuf);
+			print_phrases(fptr, killf_phrases[4], group, killf_reasons[why], headerbuf, NULL);
 			fclose(fptr);
 		}
 	}
-#endif
 	return killyn;			
 }
 /*-----------------------------------------------------------------------*/
@@ -579,7 +573,7 @@ int check_a_group(POneKill killp, char *headerbuf, int *why) {
 			/* count the nr of commas in the group line */
 			i = 1;	/* have at least one group */
 			tptr = startline;
-			while(i <= killp->maxgrps && *tptr != '\r' && *tptr != '\0' ) {
+			while(i <= killp->maxgrps && *tptr != '\n' && *tptr != '\0' ) {
 				if(*tptr++ == COMMA) {
 					i++;
 				}
@@ -596,7 +590,7 @@ int check_a_group(POneKill killp, char *headerbuf, int *why) {
 		if(regex_check(headerbuf, Params[PARAM_PATH].header, &(killp->path)) == TRUE) {
 #else
 	if(match == FALSE && killp->path != NULL) {
-		if(check_line(headerbuf, Params[PARAM_PATH].header, killp->path, PATHHOST_SEPARATOR, CHECK_CHECK, killp->quote) == TRUE) {
+		if(check_line(headerbuf, Params[PARAM_PATH].header, killp->path, killp->pathhost_sep, CHECK_CHECK, killp->quote) == TRUE) {
 #endif
 			/* jackpot */
 			match = TRUE;
@@ -609,7 +603,7 @@ int check_a_group(POneKill killp, char *headerbuf, int *why) {
 		if(regex_check(headerbuf, Params[PARAM_FROM].header, &(killp->from)) == TRUE) {
 #else
 	if(match == FALSE && killp->from != NULL) {
-		if(check_line(headerbuf, Params[PARAM_FROM].header, killp->from, FROM_SEPARATOR, CHECK_CHECK, killp->quote) == TRUE) {
+		if(check_line(headerbuf, Params[PARAM_FROM].header, killp->from, killp->from_sep, CHECK_CHECK, killp->quote) == TRUE) {
 #endif
 			/* jackpot */
 			match = TRUE;
@@ -622,7 +616,7 @@ int check_a_group(POneKill killp, char *headerbuf, int *why) {
 		if(regex_check(headerbuf, Params[PARAM_SUBJ].header, &(killp->subj)) == TRUE) {
 #else
 	if(match == FALSE && killp->subj != NULL) {
-		if(check_line(headerbuf, Params[PARAM_SUBJ].header, killp->subj, SUBJECT_SEPARATOR, CHECK_CHECK, killp->quote) == TRUE) {
+		if(check_line(headerbuf, Params[PARAM_SUBJ].header, killp->subj, killp->subject_sep, CHECK_CHECK, killp->quote) == TRUE) {
 #endif
 			/* jackpot */
 			match = TRUE;
@@ -635,7 +629,7 @@ int check_a_group(POneKill killp, char *headerbuf, int *why) {
 		if(regex_check(headerbuf, Params[PARAM_HOST].header, &(killp->nntphost)) == TRUE) {
 #else
 	if(match == FALSE && killp->nntphost != NULL) {
-		if(check_line(headerbuf, Params[PARAM_HOST].header, killp->nntphost, NNTP_SEPARATOR, CHECK_CHECK, killp->quote) == TRUE) {
+		if(check_line(headerbuf, Params[PARAM_HOST].header, killp->nntphost, killp->nntp_sep, CHECK_CHECK, killp->quote) == TRUE) {
 #endif
 			/* jackpot */
 			match = TRUE;
@@ -654,7 +648,7 @@ char *malloc_line(int which, const char *linein) {
 
 				       /* len = how much not to malloc */
 	if((ptr = malloc((strlen(linein)+1) - Params[which].len)) == NULL) {
-		error_log(ERRLOG_REPORT, "Unable to malloc memory\n");
+		error_log(ERRLOG_REPORT, killf_phrases[0], NULL);
 	} 
 	else {
 		strcpy(ptr, &linein[Params[which].len]);
@@ -732,6 +726,11 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill) {
 
 	/* first initialized the killstruct */
 	mykill->hilines = mykill->lowlines = mykill->maxgrps = 0;
+	mykill->pathhost_sep = DEFAULT_PATHHOST_SEP;
+	mykill->subject_sep = DEFAULT_SUBJECT_SEP;
+	mykill->from_sep = DEFAULT_FROM_SEP;
+	mykill->nntp_sep = DEFAULT_NNTP_SEP;
+
 #ifndef USE_REGEX
 	mykill->path = mykill->from = mykill->subj = NULL;
 #else
@@ -779,10 +778,10 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill) {
 						break;						
 					  case PARAM_PATH:
 #ifdef USE_REGEX
-						regex_scan(&(mykill->path), buf, PATH_SEPARATOR, mykill->quote);
+						regex_scan(&(mykill->path), buf, mykill->pathhost_sep, mykill->quote);
 #else
 						if((mykill->path = malloc_line(PARAM_PATH, buf)) == NULL) {
-							error_log(ERRLOG_REPORT, "No paths will be processed for %s\n", group);
+							error_log(ERRLOG_REPORT, killf_phrases[6], group, NULL);
 						}
 #ifdef DEBUG2 
 						else {
@@ -793,11 +792,11 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill) {
 						break;
 					  case PARAM_FROM:
 #ifdef USE_REGEX
-						regex_scan(&(mykill->from), buf, FROM_SEPARATOR, mykill->quote);
+						regex_scan(&(mykill->from), buf, mykill->from_sep, mykill->quote);
 #else
 
 						if((mykill->from = malloc_line(PARAM_FROM, buf)) == NULL) {
-							error_log(ERRLOG_REPORT, "No From lines will be processed for %s\n", group);
+							error_log(ERRLOG_REPORT, killf_phrases[7], group, NULL);
 						}
 #ifdef DEBUG2 
 						else {
@@ -808,10 +807,10 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill) {
 						break;
 					  case PARAM_SUBJ:
 #ifdef USE_REGEX
-						regex_scan(&(mykill->subj), buf, SUBJECT_SEPARATOR, mykill->quote);
+						regex_scan(&(mykill->subj), buf, mykill->subject_sep, mykill->quote);
 #else
 						if((mykill->subj = malloc_line(PARAM_SUBJ, buf)) == NULL) {
-							error_log(ERRLOG_REPORT, "No Subjects will be processed for %s\n", group);
+							error_log(ERRLOG_REPORT, killf_phrases[8], group, NULL);
 						}
 #ifdef DEBUG2 
 						else {
@@ -822,10 +821,10 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill) {
 						break;
 					  case PARAM_HOST:
 #ifdef USE_REGEX
-						regex_scan(&(mykill->nntphost), buf, NNTP_SEPARATOR, mykill->quote);
+						regex_scan(&(mykill->nntphost), buf, mykill->nntp_sep, mykill->quote);
 #else
 						if((mykill->nntphost = malloc_line(PARAM_HOST, buf)) == NULL) {
-							error_log(ERRLOG_REPORT, "No NNTP Hosts will be processed for %s\n", group);
+							error_log(ERRLOG_REPORT, killf_phrases[9], group, NULL);
 						}
 #ifdef DEBUG2 
 						else {
@@ -837,12 +836,57 @@ int parse_a_file(const char *fname, const char *group, POneKill mykill) {
 
 					  case PARAM_QUOTE:
 						if(buf[Params[PARAM_QUOTE].len] == '\0' || buf[Params[PARAM_QUOTE].len] == '\n') {
-							error_log(ERRLOG_REPORT, "No character to process for quote, ignoring\n");
+							error_log(ERRLOG_REPORT, "%s %s %s\n", killf_phrases[10], NULL);
 						}
 						else {
 							mykill->quote = buf[Params[PARAM_QUOTE].len];
 #ifdef DEBUG2
 							do_debug("Killfile Quote = '%c'\n", mykill->quote);
+#endif
+						}
+						break;
+					  case PARAM_PATHHOST_SEP:
+						if(buf[Params[PARAM_PATHHOST_SEP].len] == '\0' || buf[Params[PARAM_PATHHOST_SEP].len] =='\n') {
+							error_log(ERRLOG_REPORT, killf_phrases[11], NULL);
+						}
+						else {
+							mykill->pathhost_sep = buf[Params[PARAM_PATHHOST_SEP].len];
+#ifdef DEBUG2
+							do_debug("Killfile pathhost_sep = '%c'\n", mykill->pathhost_sep);
+#endif
+						}
+						break;
+						break;
+					  case PARAM_SUBJECT_SEP:
+						if(buf[Params[PARAM_SUBJECT_SEP].len] == '\0' || buf[Params[PARAM_SUBJECT_SEP].len] =='\n') {
+							error_log(ERRLOG_REPORT, killf_phrases[12],NULL);
+						}
+						else {
+							mykill->subject_sep = buf[Params[PARAM_SUBJECT_SEP].len];
+#ifdef DEBUG2
+							do_debug("Killfile subject_sep = '%c'\n", mykill->subject_sep);
+#endif
+						}
+						break;
+					  case PARAM_FROM_SEP:
+						if(buf[Params[PARAM_FROM_SEP].len] == '\0' || buf[Params[PARAM_FROM_SEP].len] =='\n') {
+							error_log(ERRLOG_REPORT, killf_phrases[13], NULL);
+						}
+						else {
+							mykill->from_sep = buf[Params[PARAM_FROM_SEP].len];
+#ifdef DEBUG2
+							do_debug("Killfile from_sep = '%c'\n", mykill->from_sep);
+#endif
+						}
+						break;
+					  case PARAM_NNTP_SEP:
+						if(buf[Params[PARAM_NNTP_SEP].len] == '\0' || buf[Params[PARAM_NNTP_SEP].len] =='\n') {
+							error_log(ERRLOG_REPORT, killf_phrases[14],NULL);
+						}
+						else {
+							mykill->nntp_sep = buf[Params[PARAM_NNTP_SEP].len];
+#ifdef DEBUG2
+							do_debug("Killfile nntp_sep = '%c'\n", mykill->nntp_sep);
 #endif
 						}
 						break;
@@ -923,7 +967,7 @@ void regex_scan(pmy_regex which, char *linein, char separator, char quotechar) {
 			}
 			/* now alloc memory */
 			if((retval = calloc(sizeof(regex_t), nr)) == NULL) {
-				error_log(ERRLOG_REPORT, "Unable to alloc memory to process killfile regex, skipping\n");
+				error_log(ERRLOG_REPORT, killf_phrases[5], NULL);
 			}
 			else {
 				/* now for each string, do the regcomp */
@@ -936,7 +980,7 @@ void regex_scan(pmy_regex which, char *linein, char separator, char quotechar) {
 					*tptr++ = '\0';	/* so can call regcomp() correctly */
 							/* the ++ so next one set up correctly */
 					if(*startline == quotechar) {
-						tptr++;
+						startline++;
 						flags = REG_NOSUB;
 					}
 					else {

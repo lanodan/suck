@@ -1,8 +1,10 @@
 #include <config.h>
 
-
 #include <stdio.h>
 #include "suck_config.h"
+#include "timer.h"
+#include "phrases.h"
+#include "both.h"
 
 #ifdef TIMEOUT
 # if TIME_WITH_SYS_TIME
@@ -20,22 +22,19 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#include "timer.h"
 
 /*internal functions */
 double get_elapsed(struct timeval *);
 
 /*-----------------------------------------------------------*/
-const char *TimerFunc(int which_function, long nradd) { 
+void TimerFunc(int which_function, long nradd, FILE *fpi) { 
 
 	static struct timeval start;
 	static long nrbytes = 0L;	/* just in case */
-	static char retdisp[256];
-	static char none[] = { "" };	
+	char strbytes[32], strmins[32], strsecs[32], strbps[32];
 
 	double elapsed, bps;
 	long mins;		/* long so can get mins to exact decimal */
-	char *retval = none;
 
 	switch(which_function) {
 	  case TIMER_START:
@@ -49,31 +48,34 @@ const char *TimerFunc(int which_function, long nradd) {
 		if(nrbytes > 0) {
 			elapsed = get_elapsed(&start);
 			bps = (elapsed > 0.0) ? bps = nrbytes / elapsed : 0.0;
-			sprintf(retdisp,"%10.1f BPS", bps);
-			retval = retdisp;
+			sprintf(strbps,"%.1f", bps);
+			print_phrases(fpi, timer_phrases[2], strbps, NULL);
 		}
 		break;
 	  case TIMER_TIMEONLY:
 		elapsed = get_elapsed(&start);
 		mins = ((long) elapsed) / 60 ;		/* get minutes */
 		elapsed -= (mins * 60);		/* subtract to get remainder */
-		sprintf(retdisp, "Elapsed Time = %ld mins %.2f seconds", mins, elapsed);
-		retval = retdisp;
+		sprintf(strmins, "%ld", mins);
+		sprintf(strsecs, "%.2f", elapsed);
+		print_phrases(fpi, timer_phrases[0], strmins, strsecs, NULL);
 		break;
 	  case TIMER_TOTALS:
 		elapsed = get_elapsed(&start);
 		bps = (elapsed > 0.0 && nrbytes > 0) ? bps = nrbytes / elapsed : 0.0;
-
 		mins = ((long) elapsed) / 60 ;		/* get minutes */
 		elapsed -= (mins * 60);		/* subtract to get remainder */
-		sprintf(retdisp, "%ld Bytes Received in %ld mins %.2f seconds, BPS = %-10.1f", nrbytes, mins, elapsed, bps);
-		retval = retdisp;
+		sprintf(strbytes, "%ld", nrbytes);
+		sprintf(strmins, "%ld", mins);
+		sprintf(strsecs, "%.2f", elapsed);
+		sprintf(strbps, "%.1f", bps);
+		print_phrases(fpi, timer_phrases[1], strbytes, strmins, strsecs, strbps, NULL);
 		break;	
 	  default:
 		/* ignore invalid commands */
 		break;
 	}
-	return retval;
+	return;
 }
 /*-----------------------------------------------------------------------------------*/
 double get_elapsed(struct timeval *start) {

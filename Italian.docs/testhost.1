@@ -1,5 +1,5 @@
 .\" Traduzione italiana di Giuseppe De Marco <gdm@rebel.net>
-.\" 4 Ottobre 1996 - Ultima modifica: 4 Novembre 1996
+.\" 4 Ottobre 1996 - Ultima modifica: 15 Marzo 1997
 
 .\" $Revision: 1.1 $
 .TH TESTHOST 1
@@ -31,6 +31,10 @@ userid
 [
 .BI -P
 password
+]
+[
+.BI -l
+phrase_file
 ]
 
 .SH OPZIONI
@@ -68,6 +72,14 @@ al 119 di default, quando si connette all'host.
 
 Queste due opzioni permettono di specificare un userid ed una password, se
 il server NNTP li richiede.
+
+\-l phrase_file
+
+Questa opzione dice a testhost di caricare un file delle frasi alternativo,
+invece di usare i messaggi built-in.  Questo permette di far stampare a
+testhost le frasi in un'altra lingua, o permette di customizzare i messaggi
+senza ricompilare.
+Vedere "FRASI IN UNA LINGUA STRANIERA" in suck.1 per ulteriori dettagli.
 
 
 .SH DESCRIZIONE

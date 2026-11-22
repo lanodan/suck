@@ -2,6 +2,9 @@
 
 #BEFORE USING - check to ensure all the paths defined below are correct!!
 
+#NOTE: this script probably needs to be run by root.  Most systems will
+# not let a normal user run ctlinnd 
+
 REMOTE_HOST=news.pixi.com
 LOCAL_HOST=localhost
 
@@ -22,6 +25,7 @@ OUTGOINGFAIL=${OUTGOINGNEW}.fail	# file with failed xfers
 SCRIPT=${BASEDIR}/put.news		# my filter for rpost
 OUTFILE=/tmp/tmp$$			# used by rpost as article after it is filtered
 LOCKFILE=${BASEDIR}/getnews.lock	# lock file to prevent multiple instances of script
+NEWSGROUP=news				# which group owns the file in out.going, typically either news or uucp.
 
 TESTHOST=testhost
 RPOST=rpost
@@ -69,7 +73,7 @@ if [ ${REMOTE_RESULT} -eq 0 -a ${LOCAL_RESULT} -eq 0 ]; then
 	fi
 
 	# now upload messages
-	if [ -s ${OUTGOING}  -o -s ${OUTGOINGNEW}]; then
+	if [ -s ${OUTGOING}  -o -s ${OUTGOINGNEW} ]; then
 
 		${TESTHOST} ${REMOTE_HOST} -s
 
@@ -102,22 +106,18 @@ if [ ${REMOTE_RESULT} -eq 0 -a ${LOCAL_RESULT} -eq 0 ]; then
 				rm ${OUTFILE}
 			elif [ ${ERRLEV} -eq 1 ]; then
 				echo "Error posting a message"
-				echo "Error remote posting, look at ${ERRLOG}"
 			elif [ ${ERRLEV} -eq 2 ]; then
 				echo "Unable to do NNTP authorization with remote server"
-				echo "Error remote posting, look at ${ERRLOG}"
 			elif [ ${ERRLEV} -eq 3 ]; then
 				echo "Unexpected answer from remote server to a command while doing NNTP authorization"
-				echo "Error remote posting, look at ${ERRLOG}"
 			elif [ ${ERRLEV} -eq -1 ]; then
 				echo "Fatal error"
-				echo "Error remote posting, look at ${ERRLOG}"
 			fi
 
 			if [ -f ${OUTGOINGFAIL} ]; then
 				mv ${OUTGOINGFAIL} ${OUTGOINGNEW}	# so we can re do it
-				chown news.news ${OUTGOING}
-				chmod 664 ${OUTGOING}
+				chown news.${NEWSGROUP} ${OUTGOINGNEW}
+				chmod 664 ${OUTGOINGNEW}
 			fi
 		fi
 	fi	
@@ -126,7 +126,7 @@ if [ ${REMOTE_RESULT} -eq 0 -a ${LOCAL_RESULT} -eq 0 ]; then
 
 	if [ ${SUCK_STATUS} -eq 0 ]; then	
 		# locally post articles
-		${LOCALPOST} ${LOCALPOST_ARG} ${LOCAL_HOST} ${BATCHFILE}
+		${LOCALPOST} ${LOCAL_HOST} ${BATCHFILE}
 		
 		if [ $? -eq 0 ]; then
 			echo "Posted Articles Locally"

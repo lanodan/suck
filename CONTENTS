@@ -30,7 +30,7 @@ Japanese.docs/rpost.1J.gz
 Japanese.docs/suck.1J.gz
 Japanese.docs/testhost.1J.gz
 
-# ITALIAN DOCS
+# italian DOCS
 Italian.docs/Makefile.in
 Italian.docs/README
 Italian.docs/README.Italy
@@ -38,10 +38,24 @@ Italian.docs/lpost.1
 Italian.docs/rpost.1
 Italian.docs/suck.1
 Italian.docs/testhost.1
+Italian.docs/sample/get.news.innxmit
+Italian.docs/sample/put.news
+
+# SPANISH DOCS
+Spanish.docs/Makefile.in
+Spanish.docs/README
+Spanish.docs/README.Spain
+Spanish.docs/lpost.1
+Spanish.docs/phrases.spanish
+Spanish.docs/rpost.1
+Spanish.docs/suck.1
+Spanish.docs/testhost.1
 
 # SOURCE FILES	
 both.c
 both.h
+both_phrases.c
+bothengl.h
 chkhistory.c
 chkhistory.h
 chkhistory_db.c
@@ -51,13 +65,17 @@ killfile.c
 killfile.h
 killprg.c
 lpost.c
+phrases.h
 rpost.c
+rpost_phrases.c
 suck.c
 suck.h
 suck_config.h
+suck_phrases.c
 suckutils.c
 suckutils.h
 testhost.c
+test_phrases.c
 timer.c
 timer.h
 

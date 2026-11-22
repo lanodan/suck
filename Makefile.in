@@ -50,8 +50,8 @@ srcdir = @srcdir@
 # Suck Makefile
 PKGNAME=suck
 VERSION_MAJOR=3
-VERSION_MINOR=3
-VERSION_PATCH=2
+VERSION_MINOR=4
+VERSION_PATCH=1
 VERSION=$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
 DVERSION=-DSUCKVER=$(VERSION_MAJOR) -DSUCKVER_MINOR=$(VERSION_MINOR) -DSUCKVER_PATCH=$(VERSION_PATCH)
 
@@ -77,9 +77,12 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 
 #List of .o files suck needs to compile:
-suckobjs = suck.o suckutils.o both.o killfile.o timer.o killprg.o dedupe.o $(CHKHISTORY)
-
-all: suck rpost testhost
+suckobjs = both.o both_phrases.o suck.o suckutils.o killfile.o timer.o killprg.o dedupe.o suck_phrases.o $(CHKHISTORY)
+rpostobjs = both.o both_phrases.o rpost.o rpost_phrases.o
+testhobjs = both.o both_phrases.o testhost.o test_phrases.o
+makepobjs = makephrases.o suck_phrases.o rpost_phrases.o test_phrases.o both_phrases.o
+ 
+all: phrases.h suck rpost testhost
 	@echo make done
 
 suck: $(suckobjs)
@@ -88,11 +91,20 @@ suck: $(suckobjs)
 lpost: lpost.o
 	$(CC) $(LDFLAGS) -o lpost lpost.o $(LIBS)
 
-rpost: rpost.o both.o
-	$(CC) $(LDFLAGS) -o rpost rpost.o both.o $(LIBS)
+rpost: $(rpostobjs)
+	$(CC) $(LDFLAGS) -o rpost $(rpostobjs) $(LIBS)
 
-testhost: testhost.o both.o
-	$(CC) $(LDFLAGS) -o testhost testhost.o both.o $(LIBS)
+testhost: $(testhobjs)
+	$(CC) $(LDFLAGS) -o testhost $(testhobjs) $(LIBS)
+
+makephrases: $(makepobjs)
+	$(CC) $(LDFLAGS) -o makephrases $(makepobjs) $(LIBS)
+
+phrases: makephrases
+	./makephrases phrases.engl
+
+phrases.h: makephrases 
+	./makephrases phrases.h
 
 install: install_bin install_man
 
@@ -131,13 +143,13 @@ cleanrun:
 	rm -f suck.errlog suck.status suck.newrc suck.index suck.sorted suck.restart suck.lock suck.killlog debug.* gmon.out batch
 
 moreclean: clean cleanrun 
-	rm -f suck rpost testhost lpost
+	rm -f suck rpost testhost lpost makephrases
 
 distclean: clean cleanrun cleanconfig moreclean
-	rm -f sucknewsrc sucknewsrc.old suckkillfile suckothermsgs batch
+	rm -f sucknewsrc sucknewsrc.old suckkillfile suckothermsgs batch phrases.engl 
 
 cleanconfig:
-	rm -f Makefile Japanese.docs/Makefile Italian.docs/Makefile config.h config.cache config.status config.log
+	rm -f Makefile Japanese.docs/Makefile Italian.docs/Makefile Spanish.docs/Makefile config.h config.cache config.status config.log
 
-maketar: distclean
+maketar: phrases.h distclean
 	tar -czv -f ../$(PKGNAME)-$(VERSION).tar.gz -C .. suck-$(VERSION)

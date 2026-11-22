@@ -22,6 +22,10 @@ typedef struct {
 	int lowlines;	/* nr of lines min article length */
 	int maxgrps;	/* max nr of grps (to prevent spams) */
 	char quote;	/* character to use as quote (for case compare) */
+	char pathhost_sep;
+	char subject_sep;
+	char from_sep;
+	char nntp_sep;
 #ifdef USE_REGEX
 	my_regex path;
 	my_regex from;
@@ -48,6 +52,7 @@ typedef struct {
 } Child;
  
 typedef struct killstruct {
+	int logyn;
 	int totgrps;
 	PGroup grps;	/* dynamicly allocated array */
 	int ( *killfunc)(struct killstruct *, char *); /*function to call */
@@ -57,7 +62,7 @@ typedef struct killstruct {
 
 /* function prototypes for killfile.c */
 int get_one_article_kill(PMaster, int, PKillStruct);
-PKillStruct parse_killfile(void);
+PKillStruct parse_killfile(int);
 void free_killfile(PKillStruct);
 int chk_msg_kill(PKillStruct, char *);
 

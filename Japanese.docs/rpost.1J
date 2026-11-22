@@ -51,6 +51,7 @@ rpost - NNTP ニュースサーバに記事をポストします。
 [ \fB-P\fP \fIpassword\fP ]
 [ \fB-M\fP ]
 [ \fB-N\fP \fIport_number\fP ]
+[ \fB-l\fP \fIphrase_file\fP ]
 [ \fB-f\fP \fIfilter\fP \fI$$o=<outfile>\fP \fIfilter_arg1\fP ... ]
 .PP
 .PP
@@ -126,6 +127,15 @@ welcome のメッセージの直後に invalid command メッセージが表示される場合、
 その他のオプションをコマンドラインに指定する代わりに、
 このファイルから読み込みます。
 .PP
+\fB-l\fP \fIphrase_file\fP
+.PP
+.PP
+システム組み込みのメッセージの代わりに表示させるメッセージが入った
+フレーズファイルを指定します。
+フレーズファイルを使うと、他国語のメッセージを表示させたり、
+コンパイルし直すことなくメッセージを書き換えることができます。
+詳細については、\fIsuck (1)\fP の「他国語によるメッセージの表示」を
+参照してください。
 .PP
 .SH 標準入力モード
 
@@ -142,7 +152,8 @@ welcome のメッセージの直後に invalid command メッセージが表示される場合、
 .PP
 .PP
 .PP
-\fBrpost\fP は 1 つの記事を標準入力から読み込み、 NNTP サーバに送ります。
+\fBrpost\fP は 1 つの記事を標準入力から読み込み、
+NNTP サーバに送ります。
 各記事には、少なくとも Newsgroups: と Subject: のヘッダが必要です。
 ヘッダと本文の間は空白行で区切る必要があります。
 rpost 自体は、記事を一切書き換えません。
@@ -208,29 +219,31 @@ out.going ディレクトリ中のファイルに書き込みます。
 たとえば、 NNTP-Posting-Host ヘッダが入っている記事は、多くの場合、
 POST コマンドでは受け付けられません。
 このオプションは、このような場合に記事を事前に処理するためのものです。
-次のパラメータを指定する必要があります。
+次の 3 つのパラメータを指定する必要があります。
 .PP
 .PP
 .PP
-\fI$$=<outfile>\fP
+\fI$$o=<outfile>\fP
 .PP
 \fI<outfile>\fP には、
 NNTP サーバにポストできる形式に変換した結果を出力する
 ファイル名を指定します。
 このパラメータはフィルタプログラムには渡されません。
-\fB-f\fP とフィルタ名の後であれば、
-コマンドラインのどこに書いてもかまいません。
+\fB-f\fP の後であれば、フィルタ名の前後のどちらに
+指定してもかまいません。
 .PP
-\fI$$i\fP
+\fIfilter\fP
 .PP
-フィルタを呼び出すときに、
-\fBrpost\fP は \fI$$i\fP を
-記事のファイル名に置き換え、フィルタに引き渡します。
+呼び出すプログラムの名前を指定します。
+フィルタ名に続く$$=o 以外の引数は、
+フィルタプログラムに引き渡されます。
 .PP
 \fIarg1\fP
 .PP
 フィルタのプログラムやスクリプトに引き渡す最初の引数で、
 一般的には \fI$$i\fP を指定します。
+\fI$$i\fP は、整形したい記事のファイル名に
+置き換えられます。
 .PP
 \fIarg2\fP ...
 .PP
@@ -265,7 +278,7 @@ rpost コマンドは次のように指定します。
 .sp
 .nf
 rpost -b /usr/spool/news/out.going/pixi -f myscr
-$$o=/tmp/FILTERED_MSG $$ /tmp/FILTER_MSG
+$$o=/tmp/FILTERED_MSG $$ /tmp/FILTERED_MSG
 .DE
 .fi 
 .sp
@@ -276,14 +289,15 @@ $$o=/tmp/FILTERED_MSG $$ /tmp/FILTER_MSG
 .DS
 .sp
 .nf
-myscr infilename /tmp/FILTER_MSG
+myscr infilename /tmp/FILTERED_MSG
 .DE
 .fi 
 .sp
 .PP
 .PP
 myscr の処理が終ると、きれいになった記事は
-/tmp/FILTER_MSG ディレクトリに格納され、リモート NNTP サーバに送られます。
+/tmp/FILTERED_MSG ディレクトリに格納され、
+リモート NNTP サーバに送られます。
 .PP
 .PP
 .SH 注意
@@ -295,6 +309,23 @@ myscr の処理が終ると、きれいになった記事は
 上例のようにバックスラッシュを使うか、
 単引用符でエスケープしてください。
 エスケープを忘れると、 rpost は正しく動作しません。
+.PP
+.SH 重要な注意
+
+.PP
+.PP
+.PP
+フィルタプログラムで取り除く内容はきわめて慎重に吟味してください。
+情報の誤った削除は、きわめて重要な問題を起こすことがあります。
+たとえば、ローカルまたはリモートのニュースサーバが
+不適切な設定になっている状態で
+Message-IDフィールドを削除してしまうと、
+他人の記事を誤って何度もポストしてしまうことがありえます。
+.PP
+.PP
+訳注: これは実際にあったことで、INN の newsfeeds ファイル
+(Cnews では sys ファイル) の設定が誤っている場合に
+Message-ID を削除すると、このようなことが生じます。
 .PP
 .SH suck への引数をファイルに収める
 
@@ -368,5 +399,5 @@ suck(1) 、 testhost(1) 、 lpost(1)
 .PP
 .PP
 この日本語版に関する質問や問題点の指摘は、
-久保元治 (mkubo@st.rim.or.jp) までお知らせください。
+久保元治 (mkubo@3ware.co.jp) までお知らせください。
 .PP

@@ -8,6 +8,7 @@
 #include "both.h"
 #include "dedupe.h"
 #include "suckutils.h"
+#include "phrases.h"
 
 #ifdef TIMER
 #include "timer.h"
@@ -32,10 +33,10 @@ void dedupe_list(PMaster master) {
 		long start;
 	} letters[NR_LETTERS];	
 
-	fprintf(master->msgs, "Deduping ");
+	print_phrases(master->msgs, dedupe_phrases[0], NULL);
 	fflush(master->msgs);	/* so msg gets printed */
 #ifdef TIMER
-	TimerFunc(TIMER_START, 0L);
+	TimerFunc(TIMER_START, 0L, NULL);
 #endif
 	/* pass one */
 	/* count the letters, so we can build the array and also index it */
@@ -70,7 +71,7 @@ void dedupe_list(PMaster master) {
 	/* pass two */
 	/* first malloc the array */
 	if ((lets = (PList *) calloc(master->nritems, sizeof(PList))) == NULL) {
-		error_log(ERRLOG_REPORT, "Out of Memory, skipping Deduping\n");
+		error_log(ERRLOG_REPORT, dedupe_phrases[1], NULL);
 	}
 	else {
 		/* now put them in place */
@@ -134,7 +135,7 @@ void dedupe_list(PMaster master) {
 		free(lets);
 	}
 #ifdef TIMER
-	fprintf(master->msgs, "%s\n", TimerFunc(TIMER_TIMEONLY, 0l));
+	TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
 #endif
-	fprintf(master->msgs, "Deduped, %d Items remaining, %d dupes removed\n", master->nritems, nrfound);
+	print_phrases(master->msgs, dedupe_phrases[2], str_int(master->nritems),  str_int(nrfound), NULL);
 }
