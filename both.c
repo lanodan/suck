@@ -26,6 +26,12 @@
 #include "phrases.h"
 
 #ifdef TIMEOUT
+/*------------------------------------*/
+int TimeOut = TIMEOUT;
+/* yes, this is the lazy way out, but */
+/* there are too many routines that   */
+/* call sgetline() to modify em all   */
+/*------------------------------------*/
 # if TIME_WITH_SYS_TIME
 #  include <sys/time.h>
 #  include <time.h>
@@ -36,7 +42,7 @@
 #    include <time.h>
 #  endif
 # endif
-#endif
+#endif /* TIMEOUT */
 
 #ifdef MYSIGNAL
 #include <signal.h>
@@ -46,10 +52,10 @@
 #include <sys/select.h>		/* for aix */
 #endif
 
-
 /* internal function proto */
 void vprint_phrases(FILE *, const char *, va_list);
 void convert_nl(char *);
+char *findnl(char *, char *);
 
 /*-----------------------------------------------------*/
 /* get next number in string */
@@ -170,7 +176,6 @@ int sputline(int fd, const char *outbuf) {
 	return send(fd, outbuf, strlen(outbuf), 0);
 }
 /*-------------------------------------------------------------*/
-#ifdef DEBUG
 void do_debug(const char *fmt, ...) {
 
 	FILE *fptr = NULL;
@@ -189,22 +194,48 @@ void do_debug(const char *fmt, ...) {
 	}
 }
 /*------------------------------------------------------------*/
-#endif
+void do_debug_binary(int len, const char *str) {
+
+	FILE *fptr = NULL;
+
+	if((fptr = fopen(N_DEBUG, "a")) == NULL) {
+		fptr = stderr;
+	}
+	fwrite(str, sizeof(str[0]), len, fptr);
+	if(fptr != stderr) {
+		fclose(fptr);
+	}
+}
 /*------------------------------------------------------------*/
 void MyPerror(const char *message) {
 
-#ifdef DEBUG	
-	do_debug("%d: %s\n", errno, message);
-#endif
 	/* can't just use perror, since it goes to stderr */
 	/* and I need to route it to my errlog */
 	/* so I have to recreate perror's format */
+
+	/* in case of NULL ptr */
+	if(message == NULL) {
+		message="";
+	}
 #ifdef HAVE_STRERROR
 	error_log(ERRLOG_REPORT, "%v1%: %v2%\n", message, strerror(errno), NULL);
 #else
 	error_log(ERRLOG_REPORT, both_phrases[9], message, errno, NULL);
 #endif
-}	
+}
+/*-----------------------------------------------------------*/
+char *findnl(char *startbuf, char *endbuf) {
+	/* find a \r\n combo in the buffer */
+
+	for(; startbuf < endbuf ; startbuf++) {
+		if(*startbuf == '\r') {
+			if(*(startbuf+1) == '\n' && (startbuf < endbuf-1)) {
+				return startbuf;
+			}
+		}
+	}
+	return NULL;
+}
 /*-----------------------------------------------------------*/
 int sgetline(int fd, char **inbuf) {
 
@@ -221,38 +252,41 @@ int sgetline(int fd, char **inbuf) {
 	ret = 0;
 	ptr = NULL;
 
-	if(eob == start || (ptr = strstr(start,"\r\n")) == NULL) {
+	if(eob == start || (ptr = findnl(start, eob)) == NULL) {
+		
 		/* TEST for not a full line in buffer */	
 		/* the eob == start test is needed in case the buffer is */
 		/* empty, since we don't know what is in it. */
 
-		i = eob-start; 	/* length of partial line in buf */
+		len = eob-start; 	/* length of partial line in buf */
 		if((eob - buf) > MAXLINLEN) {
 #ifdef DEBUG1
 			do_debug("SHIFTING BUFFER\n");
 #endif
 			/* not enuf room in buffer for a full recv */
-			memmove(buf, start, i);		/* move to start of buf */
-			eob = buf + i;
+			memmove(buf, start, len);		/* move to start of buf */
+			eob = buf + len;
 			*eob = '\0';
 			start = buf;			/* reset pointers */
 		}
-		len = i;
 		/* try to get a line in, up to maxlen */
 		do {
+#ifdef DEBUG1
+			do_debug("\nCURRENT BUF start = %d, end = %d, len = %d\n", start - buf, eob - buf, len);
+#endif
 #ifdef TIMEOUT
 			/* handle timeout value */
 			FD_ZERO(&myset);
 			FD_SET(fd, &myset);
-			mytimes.tv_sec = TIMEOUT;
+			mytimes.tv_sec = TimeOut;
 			mytimes.tv_usec = 0;
 	
 #ifdef MYSIGNAL
 			signal_block(MYSIGNAL_BLOCK);
 			/* block so we can't get interrupted by our signal defined in config.h */
 #endif
-
-			if((i = select(FD_SETSIZE, &myset, (fd_set *) NULL, (fd_set *) NULL, &mytimes)) == 1) {
+			/* the fd+1 so we only scan our needed fd not all 1024 in set */
+			if((i = select(fd+1, &myset, (fd_set *) NULL, (fd_set *) NULL, &mytimes)) == 1) { 
 				i = recv(fd, eob, MAXLINLEN-len, 0);	/* get line */
 			}
 			else if(i == 0) {
@@ -262,7 +296,7 @@ int sgetline(int fd, char **inbuf) {
 			i = recv(fd, eob, MAXLINLEN-len, 0);	/* get line */
 #endif
 #ifdef DEBUG1
-			do_debug("\nSelect/Recv returned %d", i);
+			do_debug("\nSELECT/RECV returned %d", i);
 #endif
 #ifdef MYSIGNAL
 			signal_block(MYSIGNAL_UNBLOCK);
@@ -280,13 +314,16 @@ int sgetline(int fd, char **inbuf) {
 				ret = -1;
 			}
 			else {
+
 				eob += i;	/* increment buffer end */
 				*eob = '\0';	/* NULL terminate it  */
 #ifdef DEBUG1
-				do_debug("\nGOT: %.*s",i,eob-i);
+				do_debug("\nGOT: ");
+				do_debug_binary(i,eob-i);
+				do_debug(":END GOT");
 #endif 
 				len += i;				
-				ptr = strstr(start, "\r\n");		
+				ptr = findnl(start, eob);
 			}
 		} while(ptr == NULL && len < MAXLINLEN && ret == 0);
 	}
@@ -297,16 +334,6 @@ int sgetline(int fd, char **inbuf) {
 		*inbuf = start;
 		ret = (ptr-1) - start;	/* length of string */
 		start = ptr; 	/* skip \r\n */
-		if(eob == start) {
-			/* nothing left in buffer, reset pointers to start of buffer */
-			/* to give us a full buffer to receive next data into */
-			/* hopefully doing this will mean less buffer shifting */
-			/* meaning faster receives */
-			eob = start = buf;
-#ifdef DEBUG1
-			do_debug("Empty buffer, resetting to start\n");
-#endif
-		}
 	}
 	else if(ret == 0) {
 		/* partial line in buffer */
@@ -340,6 +367,17 @@ int sgetline(int fd, char **inbuf) {
 		do_debug("\nRETURNING error, ret = %d", ret);
 	}
 #endif  
+	if(eob == start) {
+		/* nothing left in buffer, reset pointers to start of buffer */
+		/* to give us a full buffer to receive next data into */
+		/* hopefully doing this will mean less buffer shifting */
+		/* meaning faster receives */
+		eob = start = buf;
+#ifdef DEBUG1
+		do_debug("EMPTY BUFFER, resetting to start\n");
+#endif
+	}
+
 	return ret;
 }		
 /*----------------------------------------------------*/
@@ -627,7 +665,10 @@ void print_phrases(FILE *fpout, const char *argstr, ... ){
 	
 	va_start(vargs, argstr);
 
-	vprint_phrases(fpout, argstr, vargs);
+	if(fpout != NULL) {
+		/* if NULL don't need to print anything */
+		vprint_phrases(fpout, argstr, vargs);
+	}
 
 	va_end(vargs);
 }

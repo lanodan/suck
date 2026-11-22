@@ -1,9 +1,10 @@
 'SHELL = /bin/sh
 
 LANGUAGE=es
-VERSION=3.4.0
+VERSION=3.5.1
 IMANDIR=/usr/local/man/$(LANGUAGE)/man1
 DOCDIR=/usr/doc/suck-$(VERSION)
+PHRASE=/usr/local/lib/suck.phrases
 
 INSTALL = @INSTALL@
 
@@ -17,5 +18,6 @@ installiman: $(MANPGS)
 	$(INSTALL) -m 644 rpost.1    $(IMANDIR)
 	$(INSTALL) -m 644 testhost.1 $(IMANDIR)
 	$(INSTALL) -m 644 README     $(DOCDIR)
+	$(INSTALL) -m 644 phrases.spanish $(PHRASE)
 clean:
 	rm -f *[~%] core

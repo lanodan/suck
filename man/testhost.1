@@ -33,6 +33,16 @@ password
 .BI -l
 phrase_file
 ]
+[
+.BI -T
+timeout
+]
+[
+.BI -d
+]
+[
+.BI -q
+]
 
 .SH OPTIONS
 -a     Get the active list from hostname
@@ -53,7 +63,7 @@ the filename parameter.  All status messages will then be sent to this file.
 
 These options will send all error messages (normally displayed on stderr), to 
 an alternate file.  The lower case version, -e, will send the error messages
-to the compiled-in default defined in suck_config.h.  The default is suck.errog.
+to the compiled-in default defined in suck_config.h.  The default is suck.errlog.
 The upper case version, -E, requires the filename parameter.  All error messages
 will then be sent to this file.
 
@@ -76,6 +86,18 @@ the built-in messages.  This allows you to have testhost print phrases in anothe
 language, or to allow you to customize the messages without re-building.
 See the "FOREIGN LANGUAGE PHRASES" in suck.1 for more details.
 
+\-T
+This option overrides the compiled-in TIMEOUT value. This is how long testhost
+waits for data from the remote host before timing out and aborting.
+
+\-d
+This option tells testhost get the descriptions of the newsgroups on the
+remote server by sending the 'list newsgroups' command.  The remote server
+may or may not support this command.
+
+\-q 
+This option tells testhost to not display the connection and announcement messages,
+rather only display the results of the actual command run.
 
 .SH DESCRIPTION
 .I Testhost
@@ -92,7 +114,7 @@ option is used, testhost will display the server's
 active history list.  If the 
 .I -n date time
 option is used, testhost will display all new groups created on the server
-since the date and time specifed.
+since the date and time specified.
 .SH EXIT VALUES
 0 on success, -1 on failure.
 .de R$

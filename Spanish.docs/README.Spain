@@ -1,152 +1,60 @@
 
-PREFACIO
-========
-Autor Original  - Tim Smith (tzs@coho.halcyon.com)
-Mantenadores -
-Marzo 1995 - Sven Goldt (goldt@math.tu-berlin.de)
-Julio 1995 - Robert A. Yetman (boby@pixi.com)
+                  INFORMACION SOBRE SUCK EN ESPAÑOL
 
-Actualmente Mantenido por - boby@pixi.com
-Docs Japonesa - Motoharu Kubo (mkubo@st.rim.or.jp)
-Docs Italiana - Giuseppe De Marco (gdm@rebel.net)
-Docs Española - Simon Mudd (sjmudd@redestb.es)
-                Abraham Nevado (nevado@redestb.es)
+Ultima modificación : 06/10/97
 
-INTRODUCCION
-============
-El principal uso de suck es para dar noticias a un servidor local INN o
-CNEWS, sin necesidad de que el servidor remoto NNTP te tiene configurado
-como "feed".
+	Este directorio contiene las páginas man y el README traducido al
+español, para la gente que no entiende bien el inglés, o prefiere el
+documento escrito en su lengua materna.  Este trabajo, lo hemos hecho
+Abraham y yo.  Yo soy inglés, por lo que los errores gramaticales serán
+míos, y los errores de traducción probablemente serán suyos. :-)
 
-En este paquete encontrarás todo lo necesario para extraer news de un
-servidor NNTP remoto a tu maquina, y mandar articulos de tu servidor al
-servidor remoto.
+Las traducciones están hechas usando el charset latin1 -- ver la página 
+man de latin1(7) y iso_8859_1(7) para más información.
 
-La combinación de suck/rpost te permite tener tu propia maquina
-CNEWS/NNTP, y a la vez te permite controlar de donde sacas los articulos
-y a donde envias los tuyos.  Suck/rpost usan los comandos estandard de
-NNTP, que están utilizados por tu lector de news favorito (tin, xvnews,
-strn, slrn), como POST y ARTICLE.  Si puedes usar tin o xvnews con el
-servidor remoto NNTP, entonces puedes usar Suck/Rpost.
+	Haciendo `make installeman' en este directorio y se instalarán
+las páginas man en /usr/local/man/es/man1 y el README estará instalado
+en /usr/doc/suck-<versión>, creando estos directorios si es necesario.
 
-suck			Extrae/manda un newsfeed pequeño de un servidor NNTP
+Para usar el comando make, es necesario tener permiso de escritura en los
+directorios interesantes, o se puede hacer directamente si eres el superuser
+root.
 
-lpost			Coloca un articulo, sacado por suck, en el servidor
-                        local.
+	Para poder encontrar la página man en español y verlo correctamente,
+es necesario modificar el entorno (posiblemente modificando el fichero
+~/.profile o el fichero /etc/profile de la máquina):
 
-rpost			Manda articulo(s) a un servidor NNTP (como inews)
-			usando el comando POST
+LANG=es
+LESSCHARSET=latin1
 
-testhost        	Comprueba los comandos que tu host reconoce, o saca
-			la lista activa y en su falta, una nueva.
+También es necesario modificar el fichero man.config, que puede estar en
+el directorio /usr/lib, o quizá /etc:
 
-************************************************************************
-NOTA:
-Suck no funcionará con servidores NNTP obsoletos que no reconozcan el comando
-xhdr. Inn-1.4sec tiene su propio servidor NNTP que funciona con xhdr. cnews
-no tiene su propio servidor NNTP, depende, por tanto, del servidor NNTP que
-uses con cnews.
+NROFF		/usr/bin/groff -Tlatin1 -mandoc
+NEQN            /usr/bin/geqn -Tlatin1
+PAGER           /usr/bin/less -isr
 
-NOTA 2:
-Este codigo requiere un compilador "ANSI-compliant", NO funcionará con
-compiladores viejos (como los de Sun) que no aceptan prototipos de funciones.
-Podrías intentar usar el programa unprotoize, incluido con gcc, pero si vas a
-sacar gcc, ¿por qué no compilarlo? :)
+Esto al menos funciona para nosotros (linux redhat).  Si tu entorno es
+diferente, ¿nos podrías avisar de configuraciones diferentes?
 
-NOTA 3:
-El Makefile supone que estas usando el make de GNU, otros makes, pueden o
-no, funcionar.
+Cualquier error u omisión en los manuales es culpa nuestra.  Mándanos
+surgerencias para mejorar esta documentación española.  Robert
+Yetman no tiene nada que ver, ha hecho bastante esfuerzo en escribir el 
+programa y documentarlo en inglés. Yo (Simon) uso suck desde hace mucho tiempo,
+es una herramienta muy útil.  Quise hacer algo útil para los demás, en el
+espiritu del "free software", y esta es la forma de aportar el grano de
+arena. Espero que sirva a alguien que no domina el inglés, tanto como el uso
+que le doy al programa.
 
-NOTA 4:
-Si tu servidor remoto INN se lentiza drasticamente despues de bajar 100
-mensajes, y están usando INN 1.5.1, es bastante probable que compilaron INN
-con "LIKE PULLERS" configurado como DONT, que hace que INN ponga un retraso
-pequeño antes de cada mensaje.
-Habla con el administrador del sistema para ver si compilarán INN con "DO".
-Probablemente ni sabían que esta opción existía.
+Buen "sucking", ¡que disfrutes chupando!
 
+Finalmente:  Si usas esta documentación en castellano, sería interesante
+saberlo.  Alguna persona usará la documentación, o quizá más, pero si no nos
+avisas, no lo sabremos, y quizá no continuemos con este trabajo.
 
-LUGAR
-=====
-Lugar 	1	     	= sunsite.unc.edu
-Ruta 	1        	= /pub/Linux/system/Mail/news
-Archivo 1       	= suck-3.4.0.tar.gz
+Así que mandanos un e-mail, o si prefieres, una postal:
 
-Lugar 	2        	= tsx-11.mit.edu
-Ruta 	2        	= /pub/linux/sources/sbin
-Archivo 2        	= suck-3.4.0.tar.gz
-
-GRACIAS a todos los usuarios que me han enviado correo, tanto bueno como malo.
-
-DOBLEMENTE AGRADECIDO a los testeadores de la beta v3.0:
-- harleys@io.org
-- jh@yahoo.com
-- maho@Uni-paderborn.de
-- paonia@home.welcomehome.org
-- stuart@mannet.mcb.net
-- tom@mtanet.com
-
-Me ayudaron a encontrar unos cuantos bugs con problemas de portabilidad.
-
-************************************************************************  
-Si no encuentras una función que has pedido, es porque la he rechazado
-por varios motivos: 
-- No resulta fácil insertarla en el código.
-- No creo que sea necesaria o util para la mayoría de los usuarios.
-
----------------------------COMO USAR-------------------------------------
-1.  ejecutas ./configure
-2.  Si tu fichero history no es un fichero de texto, edita el Makefile.
-3.  Editar suck_config.h - hay muchas cosas configurables aquí.
-4.  Compilarlo.  (make CFLAGS=-O2, make install)
-5.  Crear un archivo sucknewsrc en el que figuren los grupos que quieres bajar
-    (ver la página manual de suck)
-6.  Echa un vistazo a sample/get.news(.innxmit or .rnews)
-	Estos scripts muestran el ciclo entero, de bajar las news y
-	y mandar las respuestas a tu host remoto.  Usa .innxmit si
-	tienes INND, o .rnews si posees CNEWS.
-	El script get.news.innxmit es el que, de hecho, utilizo, porque
-	utilizo INND.
-7.  LEE LAS PAGINAS MAN
-
-**************************************************************************
-PRINCIPALES CAMBIOS DE 3.3.2 -> 3.4.0
-
-* Añadido la capabilidad para idiomas extranjeros (-l archivo_de_frases).
-
-* Añadido que logging del "killfile" sea opcional al correr el programa (-L).
-
-* Añadido la abilidad de lentizar suck durante ejecución, usando una señala
-  signal (-w)
-
-* Añadido opciones para los "killfiles" para cambiar los separadores para las
-  opciones de path, subject, from, y nntphost.
-
-* Arreglado un "bug" al escribir a suck.newrc si había errores no esperados.
-
-* Quitado la llamada a log10(), eliminando la necesidad para la librería math.
-
-* Documentación en Español de Simon Mudd y Abraham Nevado
-
-**************************************************************************
-IDEAS PARA REVISIONES FUTURAS
-
-1. Añadir la opción de DEBUG para la línea de comandos.
-
-2. Añadir código para inn que envia comandos de depuración (por ejemplo
-   dbinit: start) despues de mandar el primer comando <ARTICLE>.
-
-3. Añadir modificaciones para Ultrix y OS/2.
-
-PLANES A LARGO PLAZO
-
-1. Guardar mensajes en formato noticias/grupo/num (Sí, sé que lo he estado 
-   prometiendo durante 6 meses, un día de estos me sentaré y lo haré)
-
-***************************************************************************
-¡LISTA DE CORREO!
-Gracias a Motoharu Kubo (mkubo@3ware.co.jp), ahora hay una lista de correo
-para suck.  La intención es usarla para debatir problemas, planes y otros
-temas relacionados con suck.  Su direccion es "suck-ml@3ware.co.jp".
-
-boby@pixi.com
+Simon Mudd <sjmudd@redestb.es>         Abraham Nevado <nevado@redestb.es>
+C/Eduardo Benot 2
+Madrid 28008
+España/Spain

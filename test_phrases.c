@@ -12,6 +12,7 @@ const char *default_test_phrases[] = {
 	"Authorization Denied\n",	/* 10 */
 	"No Phrases file provided\n",
 	"No Status Log name provided\n",
+	"No timeout value provided\n",
 };
 
 int nr_test_phrases = sizeof(default_test_phrases)/sizeof(default_test_phrases[0]);

@@ -9,10 +9,7 @@
 #include "dedupe.h"
 #include "suckutils.h"
 #include "phrases.h"
-
-#ifdef TIMER
 #include "timer.h"
-#endif
 
 /* this is almost an exact duplicate of the chkhistory() routine */
 /*-------------------------------------------------------------------------------------------------------*/
@@ -35,16 +32,12 @@ void dedupe_list(PMaster master) {
 
 	print_phrases(master->msgs, dedupe_phrases[0], NULL);
 	fflush(master->msgs);	/* so msg gets printed */
-#ifdef TIMER
+
 	TimerFunc(TIMER_START, 0L, NULL);
-#endif
+
 	/* pass one */
 	/* count the letters, so we can build the array and also index it */
 		
-#ifdef DEBUG2
-	do_debug("Starting Pass One\n");
-#endif
-
 	/* initialize the arrays */
 	for(i=0;i<NR_LETTERS;i++) {
 		letters[i].nr = letters[i].start = tlet[i] = 0;
@@ -60,13 +53,6 @@ void dedupe_list(PMaster master) {
 	for(i=1;i<NR_LETTERS;i++) {
 		letters[i].start = letters[i-1].start + letters[i-1].nr;
 	}
-
-#ifdef DEBUG2
-	for(i=0;i<NR_LETTERS;i++) {
-		do_debug("letter %d has %d entries\n", i, letters[i].nr);
-	}
-	do_debug("Starting Pass Two\n");
-#endif
 	
 	/* pass two */
 	/* first malloc the array */
@@ -83,9 +69,7 @@ void dedupe_list(PMaster master) {
 			lets[i] = curr;
 			curr = curr->next;
 		}
-#ifdef DEBUG2
-		do_debug("Starting Pass Three\n");
-#endif
+
 		/* pass three */
 		/* now we can work our way down the linked list */
 		/* and check against letter only */
@@ -97,6 +81,9 @@ void dedupe_list(PMaster master) {
 				/* need the curr != lets[x] so that we don't delete ourself */
 				if(lets[x] != NULL && curr != lets[x] && cmp_msgid(curr->msgnr, lets[x]->msgnr)==TRUE) {
 					nrfound++;
+					if(master->debug == TRUE) {
+						do_debug("Matched %s, nuking\n", curr->msgnr);
+					}
 					/* now flag it for deletion */
 					lets[x]->msgnr[0] = '\0';	/* no more article nr */
 					lets[x] = NULL;			/* so don't check it again */
@@ -104,9 +91,6 @@ void dedupe_list(PMaster master) {
 			}
 			curr = curr->next;
 		}
-#ifdef DEBUG2
-		do_debug("Pass Four\n");
-#endif
 		/* pass four */
 		/* now go thru and delete em */
 		curr = master->head;
@@ -134,8 +118,8 @@ void dedupe_list(PMaster master) {
 		}
 		free(lets);
 	}
-#ifdef TIMER
+
 	TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
-#endif
+
 	print_phrases(master->msgs, dedupe_phrases[2], str_int(master->nritems),  str_int(nrfound), NULL);
 }

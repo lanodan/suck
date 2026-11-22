@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <netdb.h>
+#include <sys/stat.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -17,6 +18,7 @@
 struct nntp_auth {
 	char *userid;
 	char *passwd;
+	int autoauth;
 };
 
 typedef struct {
@@ -27,17 +29,19 @@ typedef struct {
 	int filter_argc;
 	int deleteyn;
 	int do_modereader;
+	int debug;
 	struct nntp_auth auth;
 	FILE *status_fptr;
 	unsigned short int portnr;
-	char *phrases;
+	const char *phrases;
 } Args, *Pargs;
 
 /* function declarations */
-int do_article(int, FILE *, FILE *, struct nntp_auth *);
+int do_article(int, FILE *, FILE *, struct nntp_auth *, int);
 int do_batch(int, Pargs);
-int do_filter(int, char *[]);
-int send_command(int, const char *, char **, int, struct nntp_auth *);
+int do_filter(int, char *[], int);
+int send_command(int, const char *, char **, int, struct nntp_auth *, int);
+int do_authenticate(int, int, struct nntp_auth *);
 int scan_args(Pargs, int, char *[]);
 void log_fail(char *, char *);
 void load_phrases(Pargs);
@@ -50,10 +54,11 @@ char **both_phrases = default_both_phrases;
 
 enum { RETVAL_ERROR = -1, RETVAL_OK, RETVAL_ARTICLE_PROB, RETVAL_NOAUTH, RETVAL_UNEXPECTEDANS};
 /*------------------------------------------------*/
-void main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
 	char *inbuf;
-	int sockfd, response, retval, loop, fargc;
+	int sockfd, response, retval, loop, fargc, i;
 	struct hostent *hi;
+	struct stat sbuf;
 	char **args, **fargs;
 	Args myargs;
 
@@ -70,10 +75,21 @@ void main(int argc, char *argv[]) {
 	myargs.deleteyn = FALSE;
 	myargs.auth.userid = NULL;
 	myargs.auth.passwd = NULL;
+	myargs.auth.autoauth = FALSE;
 	myargs.do_modereader = FALSE;
 	myargs.portnr = DEFAULT_NNRP_PORT;
 	myargs.host = getenv("NNTPSERVER");		/* the default */
 	myargs.phrases = NULL;
+	myargs.debug = FALSE;
+
+	/* have to do this next so if set on cmd line, overrides this */
+#ifdef N_PHRASES		/* in case someone nukes def */
+	if(stat(N_PHRASES, &sbuf) == 0 && S_ISREG(sbuf.st_mode)) {
+		/* we have a regular phrases file make it the default */
+		myargs.phrases = N_PHRASES;
+	}
+	
+#endif
 
 	/* allow no args, only the hostname, or hostname as first arg */
 	/* also have to do the file argument checking */
@@ -120,24 +136,27 @@ void main(int argc, char *argv[]) {
 		error_log(ERRLOG_REPORT, rpost_phrases[2], NULL);
 	}
 	else {
-#ifdef DEBUG3
-	do_debug("Rpost version %d.%d.%d\n",SUCKVER, SUCKVER_MINOR, SUCKVER_PATCH);
-	do_debug("myargs.batch = %s\n", myargs.batch);
-	do_debug("myargs.prefix = %s\n", myargs.prefix);
-	do_debug("myargs.filter_argc = %d\n", myargs.filter_argc);
-	for(loop=0;loop<myargs.filter_argc;loop++) {
-		do_debug("myargs.filter_args[%d] = %s\n", loop, myargs.filter_args[loop]);
-	}
-	do_debug("myargs.status_fptr = %s\n", (myargs.status_fptr == stdout) ? "stdout" : "not stdout");
-	do_debug("myargs.deleteyn = %d\n", myargs.deleteyn);
-	do_debug("myargs.auth.userid = %s\n", myargs.auth.userid);
-	do_debug("myargs.auth.passwd = %s\n", myargs.auth.passwd);
-	do_debug("myargs.do_modereader = %d\n", myargs.do_modereader);
-	do_debug("myargs.portnr = %d\n", myargs.portnr);
-	do_debug("myargs.host = %s\n", myargs.host);
-	do_debug("myargs.phrases = %s\n", myargs.phrases);
-
+		if(myargs.debug == TRUE) {
+			do_debug("Rpost version %s\n",SUCK_VERSION);
+			do_debug("myargs.batch = %s\n", myargs.batch);
+			do_debug("myargs.prefix = %s\n", myargs.prefix);
+			do_debug("myargs.filter_argc = %d\n", myargs.filter_argc);
+			for(loop=0;loop<myargs.filter_argc;loop++) {
+				do_debug("myargs.filter_args[%d] = %s\n", loop, myargs.filter_args[loop]);
+			}
+			do_debug("myargs.status_fptr = %s\n", (myargs.status_fptr == stdout) ? "stdout" : "not stdout");
+			do_debug("myargs.deleteyn = %d\n", myargs.deleteyn);
+			do_debug("myargs.do_modereader = %d\n", myargs.do_modereader);
+			do_debug("myargs.portnr = %d\n", myargs.portnr);
+			do_debug("myargs.host = %s\n", myargs.host);
+			do_debug("myargs.phrases = %s\n", myargs.phrases);
+			do_debug("myargs.auth.autoauth = %s\n", (myargs.auth.autoauth == TRUE) ? "TRUE" : "FALSE");
+#ifdef TIMEOUT
+			do_debug("TimeOut = %d\n", TimeOut);
 #endif
+			do_debug("myargs.debug = TRUE\n");
+		}
+
 		/* we processed args okay */
 		sockfd = connect_to_nntphost( myargs.host, &hi, myargs.status_fptr, myargs.portnr);
 		if(sockfd < 0) {
@@ -145,36 +164,52 @@ void main(int argc, char *argv[]) {
 		}
 		else {
 			/* Get the announcement line */
-			sgetline(sockfd, &inbuf);
-			fputs(inbuf, myargs.status_fptr );
-			if(myargs.do_modereader == TRUE) {
-				retval = send_command(sockfd,"mode reader\r\n", &inbuf, 0, &(myargs.auth));
+			if((i = sgetline(sockfd, &inbuf)) < 0) {
+				retval = RETVAL_ERROR;
+			}
+			else {
+				fputs(inbuf, myargs.status_fptr );
+				number(inbuf, &response);
+				if(response == 480) {
+					retval = do_authenticate(sockfd, myargs.debug, &(myargs.auth));
+				}
+			}
+			if(retval == RETVAL_OK && myargs.do_modereader == TRUE) {
+				retval = send_command(sockfd,"mode reader\r\n", &inbuf, 0, &(myargs.auth), myargs.debug);
 				if( retval  == RETVAL_OK) {				
 					/* Again the announcement */
 					fputs(inbuf, myargs.status_fptr );
-					retval = RETVAL_OK;
+					number(inbuf, &response);
 				}
 			}
-		}
-		if(retval == 0) {
-			number(inbuf, &response);
-			if(response != 200) {
+			if(response != 200 && response != 480) {
 				error_log(ERRLOG_REPORT, rpost_phrases[3], NULL);
 				retval = RETVAL_ERROR;
 			}
-			else if(myargs.batch == NULL) {
+			else if(myargs.auth.autoauth == TRUE) {
+				if(myargs.auth.passwd == NULL || myargs.auth.userid == NULL) {
+					error_log(ERRLOG_REPORT, rpost_phrases[32], NULL);
+					retval = RETVAL_ERROR;
+				}
+				else {
+					retval = do_authenticate(sockfd, myargs.debug, &(myargs.auth));
+				}
+			}
+		}
+		if(retval == RETVAL_OK) {
+			if(myargs.batch == NULL) {
 				/* do one article from stdin */
-				retval = do_article(sockfd, stdin, myargs.status_fptr,&(myargs.auth));
+				retval = do_article(sockfd, stdin, myargs.status_fptr,&(myargs.auth), myargs.debug);
 			}
 			else {
 				/* batch mode */
 				retval = do_batch(sockfd, &myargs);
 			}		
 			print_phrases(myargs.status_fptr, rpost_phrases[4], hi->h_name, NULL);
-#ifdef DEBUG3
-			do_debug("Sending quit");
-#endif
-			send_command( sockfd, "quit\r\n", NULL, 0, &(myargs.auth));
+			if(myargs.debug == TRUE) {
+				do_debug("Sending quit");
+			}
+			send_command( sockfd, "quit\r\n", NULL, 0, &(myargs.auth), myargs.debug);
  			close(sockfd);
 		}
 	}
@@ -185,19 +220,18 @@ void main(int argc, char *argv[]) {
 	exit(retval);
 }
 /*----------------------------------------------------------------------------------*/
-int do_article(int sockfd, FILE *fptr, FILE *sptr, struct nntp_auth *authp) {
+int do_article(int sockfd, FILE *fptr, FILE *sptr, struct nntp_auth *authp, int debug) {
 
-	int len, response, retval, longline;
+	int len, response, retval, longline, dupeyn, i;
 	char buf[MAXLINLEN+4], *inbuf, *ptr;
 	/* the +4 in NL, CR, if have to double . in first pos */
 	retval = RETVAL_OK;
 	longline = FALSE;
 
-	/* Initiate post mode */
-	/* don't use IHAVE since I'd have to scan the message for the msgid, */
-	/* send it, wait for the response, rewind and reread the file */
-	/* its just as quick to do a post and let the other end worry about it*/
-	response = send_command(sockfd, "POST\r\n", &inbuf, 340, authp);
+	/* Initiate post mode don't use IHAVE since I'd have to scan the message for the msgid, */
+	/* then rewind and reread the file The problem lies in if I'm using STDIN for the message, */
+	/* I can't rewind!!!!, so no IHAVE */
+	response = send_command(sockfd, "POST\r\n", &inbuf, 340, authp, debug);
 	fputs(inbuf, sptr);
 	if(response!=RETVAL_OK) {
 		error_log(ERRLOG_REPORT, rpost_phrases[5], NULL);
@@ -223,9 +257,9 @@ int do_article(int sockfd, FILE *fptr, FILE *sptr, struct nntp_auth *authp) {
 				longline = TRUE;
 			}
    			sputline(sockfd, buf);
-#ifdef DEBUG3
-			do_debug("ARTICLE: %s", buf);
-#endif
+			if(debug == TRUE) {
+				do_debug("ARTICLE: %s", buf);
+			}
 		}
 		/* if the last line didn't have a nl on it, we need to */
 		/* put one so that the eom is recognized */
@@ -233,23 +267,40 @@ int do_article(int sockfd, FILE *fptr, FILE *sptr, struct nntp_auth *authp) {
 			sputline(sockfd, "\r\n");
 		}
 		sputline(sockfd, ".\r\n");
-#ifdef DEBUG3
-		do_debug("ARTICLE END\n");
-#endif
+		if(debug == TRUE) {
+			do_debug("ARTICLE END\n");
+		}
 
-
-		sgetline(sockfd, &inbuf);
-		fputs(inbuf, sptr);
-#ifdef DEBUG3
-		do_debug("RESPONSE: %s", inbuf);
-#endif
-
-		ptr = number(inbuf, &response);
-	 	if(response!=240) {
+		if((i = sgetline(sockfd, &inbuf)) < 0) {
+			retval = RETVAL_ERROR;
+		}
+		else {
+			fputs(inbuf, sptr);
+			if(debug == TRUE) {
+				do_debug("RESPONSE: %s", inbuf);
+			}
+			ptr = number(inbuf, &response);
+		}
+	 	if(retval == RETVAL_OK && response!=240) {
+			dupeyn = FALSE;
 			if(response == 441) {
 				number(ptr, &response);
 			}
 			if(response == 435) { 
+				dupeyn = TRUE;	
+			}
+			else {
+				/* M$ server sends "441 (615) Article Rejected -- Duplicate Message ID" handle that */
+				/* can't just call nr, cause of parens */
+				/* ptr should be at ( after 441 */
+				if( *ptr == '(' ) {
+					number(++ptr, &response);
+					if(response == 615) {
+						dupeyn = TRUE;
+					}		
+				}
+			}
+			if(dupeyn == TRUE) {
 				print_phrases(sptr, rpost_phrases[6], NULL);
 			}
 			else {
@@ -342,14 +393,14 @@ int do_batch(int sockfd, Pargs myargs) {
 				}
 			}
 			/* okay here have file name */
-#ifdef DEBUG3
-			do_debug("Article Name: %s\n", file);
-#endif
+			if(myargs->debug == TRUE) {
+				do_debug("Article Name: %s\n", file);
+			}
 			/* if we are using a filter, use outfilename */
 			/* else just use regular file name */
 			if(myargs->filter_argc > 0) {
 				ourargs[infilenr] =  file;
-				retval = do_filter(argon, ourargs);
+				retval = do_filter(argon, ourargs, myargs->debug);
 				infile = outfile;
 			}
 			else {
@@ -365,7 +416,7 @@ int do_batch(int sockfd, Pargs myargs) {
 				error_log(ERRLOG_REPORT, rpost_phrases[12],NULL);
 			}
 			else {
-				retval = do_article(sockfd, fpi_msg, myargs->status_fptr, &(myargs->auth));
+				retval = do_article(sockfd, fpi_msg, myargs->status_fptr, &(myargs->auth), myargs->debug);
 				fclose(fpi_msg);
 				nrdone++;
 				if(retval == RETVAL_OK) {
@@ -377,6 +428,12 @@ int do_batch(int sockfd, Pargs myargs) {
 				}
 			}	
 		}
+		if(retval == RETVAL_ERROR) {
+			/* write out the rest of the batch file to the failed file */
+			do {
+				log_fail(myargs->batch, buf);
+			} while (fgets(buf, MAXLINLEN, fpi_batch) != NULL);
+		}	
 	 	fclose(fpi_batch);
 
 		if(retval != RETVAL_ERROR) {
@@ -390,19 +447,17 @@ int do_batch(int sockfd, Pargs myargs) {
 	return retval;
 }
 /*--------------------------------------------------------------------*/
-int do_filter(int argc, char *argv[]) {
+int do_filter(int argc, char *argv[], int debug) {
 	int retval = RETVAL_OK;
+	int xxxi;
 
-#ifdef DEBUG3
-	{
-		int xxxi;
+	if( debug == TRUE) {
 		do_debug("ARGS:");
 		for(xxxi=0;xxxi<argc;xxxi++) {
 			do_debug(" %d=%s", xxxi, argv[xxxi]);
 		}
 		do_debug("\n");
 	}
-#endif
 	switch((int) fork()) {
 	  case 0:	/* in child, do execl */
 		if(execvp(argv[0], argv) == -1) {
@@ -420,109 +475,142 @@ int do_filter(int argc, char *argv[]) {
 
 	return retval;
 }
-/*------------------------------------------------------------------------------*/
-int send_command(int sockfd, const char *cmd, char **ret_response, int good_response, struct nntp_auth *authp) {
+/*----------------------------------------------------------------*/
+int send_command(int sockfd, const char *cmd, char **ret_response, int good_response, struct nntp_auth *auth, int debug) {
 	/* this is needed so can do user authorization */
 
 	int len, retval = RETVAL_OK, nr;
-	char buf[256], *resp;
+	char *resp;
 
-#ifdef DEBUG3
-	do_debug("sending command: %s", cmd);
-#endif
+	if(debug == TRUE) {
+		do_debug("sending command: %s", cmd);
+	}
 	sputline(sockfd, cmd);
 	len = sgetline(sockfd, &resp);	
 	if( len < 0) {	
 		retval = RETVAL_ERROR;		  	
 	}					
 	else {
-#ifdef DEBUG3
-		do_debug("got answer: %s", resp);
-#endif
-		number(resp, &nr);
-		if(nr == 480 ) { /* we must do authorization */
-			sprintf(buf, "AUTHINFO USER %s\r\n", authp->userid);
-#ifdef DEBUG3
-			do_debug("sending command: %s", buf);
-#endif
-			sputline(sockfd, buf);
-			len = sgetline(sockfd, &resp);
-			if( len < 0) {	
-				retval = RETVAL_ERROR;		  	
-			}					
-			else {
-#ifdef DEBUG3
-				do_debug("got answer: %s", resp);
-#endif
-				number(resp, &nr);
-				if(nr != 381) {
-					error_log(ERRLOG_REPORT, rpost_phrases[16], resp,NULL);
-					retval = RETVAL_NOAUTH;
-				}
-				else {
-					sprintf(buf, "AUTHINFO PASS %s\r\n", authp->passwd);
-					sputline(sockfd, buf);
-#ifdef DEBUG3
-					do_debug("sending command: %s", buf);
-#endif
-					len = sgetline(sockfd, &resp);
-					if(len < 0) {	
-						retval = RETVAL_ERROR;		  	
-					}					
-					else {
-#ifdef DEBUG3
-						do_debug("got answer: %s", resp);
-#endif
-						number(resp, &nr);
-						switch(nr) {
-						  case 281: /* bingo resend original command*/
-							sputline(sockfd, cmd);
-#ifdef DEBUG3
-							do_debug("sending command: %s", cmd);
-#endif
-							len = sgetline(sockfd, &resp);
-							if( len < 0) {	
-								retval = RETVAL_ERROR;		  	
-							}
-							else {
-								number(resp,&nr);
-#ifdef DEBUG3
-								do_debug("got answer: %s", resp);
-#endif
-							}
-							break;
-						  case 502: /* permission denied */
-							retval = RETVAL_NOAUTH;
-							error_log(ERRLOG_REPORT, rpost_phrases[17], NULL);
-							break;
-						  default: /* wacko error */
-							error_log(ERRLOG_REPORT, rpost_phrases[16], resp, NULL);
-							retval = RETVAL_NOAUTH;
-							break;
-						}
-					}
-				}
-			}
-		}
-		if (good_response != 0 && nr != good_response) {
-			error_log(ERRLOG_REPORT,rpost_phrases[18], cmd,resp, NULL);
-			retval = RETVAL_UNEXPECTEDANS;
-		}
+	  if(debug == TRUE) {
+	    do_debug("got answer: %s", resp);
+	  }
+
+	  number(resp, &nr);
+	  if(nr == 480 ) { 
+		  /* we must do authorization */
+		  retval = do_authenticate(sockfd, debug, auth);
+		  if(retval == RETVAL_OK) {
+			  /* resend command */
+			  sputline(sockfd, cmd);
+			  if(debug == TRUE) {
+				  do_debug("sending command: %s", cmd);
+			  }
+			  len = sgetline(sockfd, &resp);
+			  if( len < 0) {	
+				  retval = RETVAL_ERROR;		  	
+			  }
+			  else {
+				  number(resp,&nr);
+				  if(debug == TRUE) {
+					  do_debug("got answer: %s", resp);
+				  }
+			  }
+		  }
+	  }
+	  if (good_response != 0 && nr != good_response) {
+	    error_log(ERRLOG_REPORT, rpost_phrases[18],cmd,resp,NULL);
+	    retval = RETVAL_UNEXPECTEDANS;
+	  }
 	}
 	if(ret_response != NULL) {
 		*ret_response = resp;
 	}
 	return retval;
 }
+/*----------------------------------*/
+/* authenticate when receive a 480 */
+/*----------------------------------*/
+int do_authenticate(int sockfd, int debug, struct nntp_auth *auth) {
+	 int len, nr, retval = RETVAL_OK;
+	 char *resp, buf[MAXLINLEN];
+
+	 /* we must do authorization */
+	 sprintf(buf, "AUTHINFO USER %s\r\n", auth->userid);
+	 if(debug == TRUE) {
+		 do_debug("sending command: %s", buf);
+	 }
+	 sputline(sockfd, buf);
+	 len = sgetline(sockfd, &resp);
+	 if( len < 0) {	
+	   retval = RETVAL_ERROR;		  	
+	 }					
+	 else {
+		 if(debug == TRUE) {
+			 do_debug("got answer: %s", resp);
+		 }
+
+		 number(resp, &nr);
+		 if(nr == 480) {
+			 /* this is because of the pipelining code */
+			 /* we get the second need auth */
+			 /* just ignore it and get the next line */
+			 /* which should be the 381 we need */
+			 if((len = sgetline(sockfd, &resp)) < 0) {
+				 retval = RETVAL_ERROR;
+			 }
+			 else {
+				 number(resp, &nr);
+			 } 
+		 }
+		 if(retval == RETVAL_OK) {
+			 if(nr != 381) {
+				 error_log(ERRLOG_REPORT, rpost_phrases[16], resp, NULL);
+				 retval = RETVAL_NOAUTH;
+			 }
+			 else {
+				 sprintf(buf, "AUTHINFO PASS %s\r\n", auth->passwd);
+				 sputline(sockfd, buf);
+				 if(debug == TRUE) {
+					 do_debug("sending command: %s", buf);
+				 }
+				 len = sgetline(sockfd, &resp);
+				 if(len < 0) {	
+					 retval = RETVAL_ERROR;		  	
+				 }					
+				 else {
+					 if(debug == TRUE) {
+						 do_debug("got answer: %s", resp);
+					 }
+					 number(resp, &nr);
+					 switch(nr) {
+					 case 281: /* bingo */
+						 retval = RETVAL_OK;  
+						 break;
+					 case 502: /* permission denied */
+						 retval = RETVAL_NOAUTH;
+						 error_log(ERRLOG_REPORT, rpost_phrases[17], NULL);
+						 break;
+					 default: /* wacko error */
+						 error_log(ERRLOG_REPORT, rpost_phrases[16], resp, NULL);
+						 retval = RETVAL_NOAUTH;
+						 break;
+					 }
+				 }
+			 }
+		 }
+		 
+	 }
+	 return retval;
+ }
 /*--------------------------------------------------------------------------------------*/
 int scan_args(Pargs myargs, int argc, char *argv[]) {
 
 	int loop, retval = RETVAL_OK;
 	
 	for(loop=0;loop<argc && retval == RETVAL_OK;loop++) {
-#ifdef DEBUG3
-		do_debug("Checking arg #%d-%d: '%s'\n", loop, argc, argv[loop]);
-#endif
+		if(myargs->debug == TRUE) {
+			do_debug("Checking arg #%d-%d: '%s'\n", loop, argc, argv[loop]);
+		}
 		/* check for valid args format */
 		if(argv[loop][0] != '-' && argv[loop][0] != FILE_CHAR) {
 			retval = RETVAL_ERROR;
@@ -607,6 +695,9 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 			  case 'd':	/* delete batch file on success */
 				myargs->deleteyn = TRUE;
 				break;
+			  case 'u':	/* do auto-authenticate */
+				myargs->auth.autoauth = TRUE;
+				break;
 			  case 'U': 	/* next arg is userid for authorization */
 				if(loop+1 == argc) {
 					error_log(ERRLOG_REPORT, rpost_phrases[27],NULL);
@@ -646,6 +737,20 @@ int scan_args(Pargs myargs, int argc, char *argv[]) {
 					myargs->phrases = argv[++loop];
 				}
 				break;
+			  case 'D':	/* debug */
+				myargs->debug = TRUE;
+				break;
+#ifdef TIMEOUT
+			case 'T': /* timeout */
+				if(loop+1 == argc) {
+					error_log(ERRLOG_REPORT, rpost_phrases[31], NULL);
+					retval = RETVAL_ERROR;
+				}
+				else {
+					TimeOut = atoi(argv[++loop]);
+				}
+				break;
+#endif
 			  default:
 				error_log(ERRLOG_REPORT, rpost_phrases[30], argv[loop],NULL);
 				break;
@@ -680,15 +785,22 @@ void load_phrases(Pargs myargs) {
 
 	int error=TRUE;
 	FILE *fpi;
+	char buf[MAXLINLEN];
 
 	if(myargs->phrases != NULL) {
 		
 		if((fpi = fopen(myargs->phrases, "r")) == NULL) {
 			MyPerror(myargs->phrases);
 		}
-		else if((both_phrases = read_array(fpi, NR_BOTH_PHRASES, TRUE)) != NULL &&
-		        (rpost_phrases = read_array(fpi, NR_RPOST_PHRASES, TRUE)) != NULL) {
-			error = FALSE;
+		else {
+			fgets(buf, MAXLINLEN, fpi);
+			if(strncmp( buf, SUCK_VERSION, strlen(SUCK_VERSION)) != 0) {
+				error_log(ERRLOG_REPORT, "Invalid Phrase File, wrong version\n", NULL);
+			}
+			else if((both_phrases = read_array(fpi, NR_BOTH_PHRASES, TRUE)) != NULL &&
+				(rpost_phrases = read_array(fpi, NR_RPOST_PHRASES, TRUE)) != NULL) {
+				error = FALSE;
+			}
 		}
 		fclose(fpi);
 		if(error == TRUE) {

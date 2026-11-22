@@ -4,7 +4,7 @@
 #include <stdarg.h>
 
 #define LENGTHLEN 8
-/*#define DEBUG*/
+#define DEBUG 1
 
 #ifdef DEBUG
 #define N_DEBUG "debug.child"

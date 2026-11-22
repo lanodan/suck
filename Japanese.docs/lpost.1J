@@ -62,6 +62,18 @@ lpostよりもsuck のバッチモードを使う方がいいでしょう。
 lpost は、効率的な方法とはいえませんが、
 まだこの方法を使っている人もいるため、
 過去へのリンクとしてこのコマンドを残してあります。
+このコマンドはデフォルトではコンパイル、インストールされません。
+コンパイルしてインストールしたければ、
+ソースコードのディレクトリで次のコマンドを実行してください。
+.PP
+.DS
+.sp
+.nf
+ ./configure
+ make install_lpost
+.DE
+.fi 
+.sp
 .PP
 .PP
 .SH 機能説明
@@ -72,7 +84,7 @@ lpost は、効率的な方法とはいえませんが、
 パイプを使って記事を \fBrnews\fP ( 一般に /usr/lib/news にある ) に
 引き渡します。
 もし rnews が別のところにあるのなら、 
-\fBconfig.h\fP の \fB#define RNEWS\fP を変更します。
+\fBsuck_config.h\fP の \fB#define RNEWS\fP を変更します。
 lpost の典型的な使い方は、
 .PP
 .DS

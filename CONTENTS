@@ -2,6 +2,7 @@
 CHANGELOG			# commentary on what changes I've made to the source
 CONTENTS			# this file
 README				# Descriptions and News you need to read.
+README.killfiles		# Descriptions of changes to killfiles in v3.6.0
 
 # SCRIPTS TO TIE ALL THIS STUFF TOGETHER
 sample/get.news.innxmit		# sample for INN (innxmit)
@@ -30,17 +31,6 @@ Japanese.docs/rpost.1J.gz
 Japanese.docs/suck.1J.gz
 Japanese.docs/testhost.1J.gz
 
-# italian DOCS
-Italian.docs/Makefile.in
-Italian.docs/README
-Italian.docs/README.Italy
-Italian.docs/lpost.1
-Italian.docs/rpost.1
-Italian.docs/suck.1
-Italian.docs/testhost.1
-Italian.docs/sample/get.news.innxmit
-Italian.docs/sample/put.news
-
 # SPANISH DOCS
 Spanish.docs/Makefile.in
 Spanish.docs/README
@@ -52,10 +42,13 @@ Spanish.docs/suck.1
 Spanish.docs/testhost.1
 
 # SOURCE FILES	
+active.c
+active.h
+batch.c
+batch.h
 both.c
 both.h
 both_phrases.c
-bothengl.h
 chkhistory.c
 chkhistory.h
 chkhistory_db.c
@@ -64,6 +57,8 @@ dedupe.h
 killfile.c
 killfile.h
 killprg.c
+lmove.c
+lmove_phrases.c
 lpost.c
 phrases.h
 rpost.c
@@ -85,3 +80,4 @@ config.h.in
 configure
 configure.in
 install-sh
+stamp-h

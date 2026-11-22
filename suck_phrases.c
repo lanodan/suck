@@ -1,7 +1,8 @@
 const char *default_timer_phrases[] = { 
 	"Elapsed Time = %v1% mins %v2% seconds\n",		/* 0 */
 	"%v1% Bytes received in %v2% mins %v3% secs, BPS = %v4%\n",
-	"%v1% BPS"
+	"%v1% BPS",
+	"%v1% Bytes received\n"
 };
 
 const char *default_chkh_phrases[] = {
@@ -24,31 +25,28 @@ const char *default_killf_reasons[] = {
 	"No Reason - major screwup",		/* 0 */
 	"Over Hi-Line parameter",
 	"Under Low-Line parameter",
-	"Host in Path rejected",
-	"Word in Subject rejected",
-	"Name in From rejected",		/* 5 */
-	"Name in NNTP_Host rejected",
 	"Too many Newsgroups",
 	"Not matched in Group Keep file",
-	"Multiple Matches/Tiebreaker Used"
+	"Multiple Matches/Tiebreaker Used",     /* 5 */
+	"Header match:",
+	"Body match:",
+	"Body Size exceeded, size=",
+	"Body Size too small, size="
 };
 
 const char *default_killf_phrases[] = {
 	"Out of memory\n",				/* 0 */
 	"Out of memory, can't use killfiles\n",
 	"Invalid parameter line %v1%\n",
-	"Unable to log killed article",
-	"ARTICLE KILLED: %v1% - %v2%\n%v3%\n",
-	"Out of memory, skipping killfile regex processing",		/* 5 */
-	"No paths will be processed for %v1%\n",
-	"No From lines will be processed for %v1%\n",
-	"No Subjects will be processed for %v1%\n",
-	"No NNTP Hosts will be processed for %v1%\n",
-	"No character to process for quote, ignoring\n",	/* 10 */
-	"No character to process for pathhost separator, ignoring\n",
-	"No character to process for subject separator, ignoring\n",
-	"No character to process for from separator, ignoring\n",
-	"No character to process for NNTP Host separator, ignoring\n"
+	"Unable to log killed article\n",
+	"ARTICLE KILLED: group %v1% - %v2% - MsgID %v3%\n",
+	"Out of memory, skipping killfile regex processing\n",		/* 5 */
+	"No character to process for quote, ignoring\n",
+	"Nothing to scan for in header scan, ignoring\n",
+	"Out of memory, skipping killfile header scan processing\n",
+	"Unable to write article to disk\n",
+	"Nothing to scan for in body scan, ignoring\n", /* 10 */
+	"Invalid regular expression, ignoring, %v1% - %v2%\n"
 };
 
 const char *default_killp_phrases[] = {
@@ -63,7 +61,10 @@ const char *default_killp_phrases[] = {
 	"Child process closed pipe, waiting for child to end\n",
 	"Child exited with a status of %v1%\n",
 	"Child exited due to signal %v1%\n",				/* 10 */
-	"Child died, cause of death unknown\n"
+	"Child died, cause of death unknown\n",
+	"killprg: Unable to log killed article",
+	"killprg: ARTICLE KILLED: MsgID %v1%\n",
+
 };
 
 const char *default_sucku_phrases[] = { 
@@ -73,7 +74,10 @@ const char *default_sucku_phrases[] = {
 	"Lock File %v1%, stale PID, removed\n",
 	"Lock File %v1%, stale PID, Unable to remove, aborting\n",
 	"Lock file %v1%, PID exists, aborting\n",	/* 5 */
-	"Unable to create Lock File %v1%\n"
+	"Unable to create Lock File %v1%\n",
+	"Error writing to file %v1%\n",
+	"Error reading from file %v1%\n",
+	"Invalid call to move_file(), notify programer\n"
 };
 
 const char *default_suck_phrases[] = {
@@ -82,8 +86,8 @@ const char *default_suck_phrases[] = {
 	"Initiating restart at article %v1% of %v2%\n",
 	"No articles\n",
 	"Closed connection to %v1%\n",
-	"Building Inn Batch File\n",	/* 5*/
-	"Building Rnews Batch File(s)\n",
+	"BPS",	/* 5*/
+	"No local host name\n",
 	"Cleaning up after myself\n",
 	"Skipping Line: %v1%",
 	"Invalid Line: %v1%",	
@@ -92,7 +96,7 @@ const char *default_suck_phrases[] = {
 	"GROUP <%v1%>, unexpected response, %v2%\n",
 	"%v1% - %v2%...High Article Nr is low, did host reset its counter?\n",
 	"%v1% - limiting # of articles to %v2%\n",
-	"%v1% - articles %v2%-%v3%\n",			/* 15 */
+	"%v1% - %v2% articles %v3%-%v4%\n",			/* 15 */
 	"%v1% Articles to download\n",
 	"Processing Supplemental List\n",
 	"Supplemental Invalid Line: %v1%, ignoring\n",
@@ -100,7 +104,7 @@ const char *default_suck_phrases[] = {
 	"Total articles to download: %v1%\n",		/* 20 */
 	"Invalid Article Nr, skipping: %v1%\n",
 	"Out of Memory, aborting\n",
-	"Whoops, %v1% exists, %v2% doesn't, aborting\n",
+	"Whoops, %v1% exists, %v2% doesn't, unable to restart.\n",
 	"Signal received, will finish downloading article.\n",
 	"Notify programmer, problem with pause_signal()\n",	/* 25 */
 	"\nGot Pause Signal, swapping pause values\n",	
@@ -110,7 +114,7 @@ const char *default_suck_phrases[] = {
 	"Moving newsrc to backup",				/* 30 */
 	"Moving newrc to newsrc",
 	"Removing Sorted File",
-	"Removing Supplemental Message file",
+	"Removing Supplemental Article file",
 	"Invalid argument: %v1%\n",
 	"No rnews batch file size provided\n",			/* 35 */
 	"No postfix provided\n",
@@ -125,7 +129,48 @@ const char *default_suck_phrases[] = {
 	"No Port Number provided\n",				/* 45 */
 	"Invalid pause arguments\n",
 	"No phrase file provided\n",
-	"GROUP command not recognized, try the -M option\n" 
+	"GROUP command not recognized, try the -M option\n",
+	"No number of reconnects provided\n",
+	"No host to post to provided\n", /* 50 */
+	"No host name specified\n",
+	"No timeout value specified\n",
+	"No Article Number provided, can't use MsgNr mode\n",
+	"Switching to MsgID mode\n",
+	"Userid or Password not provided, unable to auto-authenticate\n", /* 55 */
+	"No local active file provided\n",
+	"Error writing article to file\n",
+	"Can't pre-batch files, no batch mode specified\n"
+};
+
+const char *default_batch_phrases[] = {
+	"Calling lmove\n",	/* 0 */
+	"Forking lmove\n",
+	"Running lmove\n",
+	"Building INN Batch File\n",
+	"Building RNews Batch File(s)\n",
+	"Posting Messages to %v1%\n", /* 5 */
+	"No batchfile to process\n",
+	"Invalid batchfile line %v1%, ignoring",
+	"Can't post: %v1% : reason : %v2%",
+	"Error posting: %v1% : reason : %v2%",
+	"%v1% Messages Posted\n", /* 10 */
+	"Article Not Wanted, deleting: %v1% - %v2%",
+	"Article Rejected, deleting: %v1% - %v2%",
+};
+
+const char *default_active_phrases[] = {
+	"Unable to get active list from local host\n", /* 0 */
+	"Out of memory reading local list\n",
+	"Loading active file from %v1%\n",
+	"Invalid group line in sucknewsrc, ignoring: %v1%\n",
+	"Deleted group in sucknewsrc, ignoring: %v1%",
+	"%v1% Articles to download\n", /* 5 */
+	"No sucknewsrc to read, creating\n",
+	"Out of memory reading ignore list, skipping\n",
+	"Adding new groups from local active file to sucknewsrc\n",
+	"Reading current sucknewsrc\n",
+	"New Group - adding to sucknewsrc: %v1%\n", /* 10 */
+	"Unable to open %v1%\n",
 };
 
 int nr_suck_phrases= sizeof(default_suck_phrases)/sizeof(default_suck_phrases[0]);
@@ -136,4 +181,7 @@ int nr_killf_reasons= sizeof(default_killf_reasons)/sizeof(default_killf_reasons
 int nr_killf_phrases= sizeof(default_killf_phrases)/sizeof(default_killf_phrases[0]);
 int nr_killp_phrases= sizeof(default_killp_phrases)/sizeof(default_killp_phrases[0]);
 int nr_sucku_phrases= sizeof(default_sucku_phrases)/sizeof(default_sucku_phrases[0]);
+int nr_active_phrases=sizeof(default_active_phrases)/sizeof(default_active_phrases[0]);
+int nr_batch_phrases=sizeof(default_batch_phrases)/sizeof(default_batch_phrases[0]);
+
 

@@ -1,21 +1,23 @@
 SHELL=/bin/sh
 
 # 必要に応じてインストール先のディレクトリを変えてください。
-VERSION=3.4.1
+VERSION=3.9.0
 JMANDIR=/usr/man/ja_JP.ujis/man1
-DOCDIR=/usr/doc/suck-3.4.1
-PREFIX = @prefix@/lib
+DOCDIR=/usr/doc/suck-$(VERSION)
+PHRASES=/usr/local/lib/suck.phrases
 
 INSTALL = @INSTALL@
 
-MANPGS = suck.1J lpost.1J rpost.1J testhost.1J README
+MANPGS = suck.1J lpost.1J rpost.1J testhost.1J README README.killfiles
 
 installjman: $(MANPGS)
-	$(INSTALL) -m 644 suck.1J     $(JMANDIR)
-	$(INSTALL) -m 644 lpost.1J    $(JMANDIR)
-	$(INSTALL) -m 644 rpost.1J    $(JMANDIR)
-	$(INSTALL) -m 644 testhost.1J $(JMANDIR)
-	$(INSTALL) -m 644 README      $(DOCDIR)
-	$(INSTALL) -m 644 phrases.japanese $(PREFIX)
+	$(INSTALL) -m 644 suck.1J           $(JMANDIR)
+	$(INSTALL) -m 644 lmove.1J          $(JMANDIR)
+	$(INSTALL) -m 644 lpost.1J          $(JMANDIR)
+	$(INSTALL) -m 644 rpost.1J          $(JMANDIR)
+	$(INSTALL) -m 644 testhost.1J       $(JMANDIR)
+	$(INSTALL) -m 644 README            $(DOCDIR)
+	$(INSTALL) -m 644 README.killfiles  $(DOCDIR)
+	$(INSTALL) -m 644 phrases.japanese  $(PHRASES)
 clean:
 	rm -f *[~%] core

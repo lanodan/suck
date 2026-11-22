@@ -30,6 +30,9 @@
 /* Define if you have the select function.  */
 #undef HAVE_SELECT
 
+/* Define if you have the setvbuf function.  */
+#undef HAVE_SETVBUF
+
 /* Define if you have the strerror function.  */
 #undef HAVE_STRERROR
 
@@ -39,8 +42,14 @@
 /* Define if you have the <fcntl.h> header file.  */
 #undef HAVE_FCNTL_H
 
+/* Define if you have the <limits.h> header file.  */
+#undef HAVE_LIMITS_H
+
 /* Define if you have the <ndir.h> header file.  */
 #undef HAVE_NDIR_H
+
+/* Define if you have the <regex.h> header file.  */
+#undef HAVE_REGEX_H
 
 /* Define if you have the <sys/dir.h> header file.  */
 #undef HAVE_SYS_DIR_H
@@ -48,20 +57,20 @@
 /* Define if you have the <sys/ndir.h> header file.  */
 #undef HAVE_SYS_NDIR_H
 
+/* Define if you have the <sys/select.h> header file.  */
+#undef HAVE_SYS_SELECT_H
+
 /* Define if you have the <sys/time.h> header file.  */
 #undef HAVE_SYS_TIME_H
 
 /* Define if you have the <unistd.h> header file.  */
 #undef HAVE_UNISTD_H
 
-/* Define if you have the <limits.h> header file. */
-#undef HAVE_LIMITS_H
+/* Define if you have the cV library (-lcV).  */
+#undef HAVE_LIBCV
 
-/* Define if you have the <regex.h> header file. */
-#undef HAVE_REGEX_H
-
-/* Define if you have the m library (-lm).  */
-#undef HAVE_LIBM
+/* Define if you have the nsl library (-lnsl).  */
+#undef HAVE_LIBNSL
 
 /* Define if you have the socket library (-lsocket).  */
 #undef HAVE_LIBSOCKET
@@ -71,9 +80,6 @@
 
 /* Define if you have the socks5 library (-lsocks5).  */
 #undef HAVE_LIBSOCKS5
-
-/* Define if you have the <sys/select.h> header file. */
-#undef HAVE_SYS_SELECT_H
 
 #ifdef _POSIX_VERSION
 #	define POSIX_SIGNALS 1

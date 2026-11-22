@@ -1,16 +1,21 @@
 SHELL=/bin/sh
 .SUFFIXES: .c .0
 
-####################################################################################################
+############################################################################
 # History File Configuration Stuff
-####################################################################################################
+############################################################################
 
 # Step1: Define the location of the History file(s)
+#HISTORYF=/var/news/etc/history
 HISTORYF=/usr/lib/news/history
 
 # Step 2: Define ONE of the CHKHISTORY 
-CHKHISTORY=chkhistory.o		# use flat file history routine
-#CHKHISTORY=chkhistory_db.o	# use DB history routine, if you use DBM, NDBM, or DBZ
+CHKHISTORY=chkhistory.o	# use flat file history routine
+#CHKHISTORY=chkhistory_db.o	# use DB history routine, if you use 
+                                # DBM, NDBM, or DBZ
+                                # in order to use DBZ with INN you will need
+                                # the full compiled source code, especially
+                                # inn/lib/libinn.so & inn/include/dbz.h
 
 # If you are using flat file, you can skip the rest, they don't matter
 
@@ -23,24 +28,26 @@ CHKHISTORY=chkhistory.o		# use flat file history routine
 #DB_LIB=-ldbm
 #DB_LIB=-lndbm
 #DB_LIB=-ldbz
-#DB_LIB=-linn
+#DB_LIB=-linn		# INN puts DBZ code in here
 
-# Step 5: IF your DB Library/Includes are in a non-standard place, define These
-#DB_INC_LOC=-I/usr/src/inn/include
-#DB_LIB_LOC=-L/usr/src/inn/lib
+# Step 5: IF your DB Library/Includes are in a non-standard place, 
+# define These
+#DB_INC_LOC=-I/usr/src/inn-1.7.2/include
+#DB_LIB_LOC=-L/usr/src/inn-1.7.2/
 
-########################################################################################################
+############################################################################
 # COMPILE flags for GCC
 # IF you are not using GCC comment this out 
-########################################################################################################
+############################################################################
 
-GCC_FLAGS =  -fno-strength-reduce -Wall -Wpointer-arith -Wcast-align -Wcast-qual -Wtraditional -Wshadow\
-  -Waggregate-return -Wmissing-prototypes -Wnested-externs -Wstrict-prototypes -Wwrite-strings \
-  -Wmissing-declarations -ansi -pedantic
+GCC_FLAGS =  -fno-strength-reduce -Wall -Wpointer-arith -Wcast-align \
+  -Wcast-qual -Wtraditional -Wshadow  -Waggregate-return \
+  -Wmissing-prototypes -Wnested-externs -Wstrict-prototypes \
+  -Wwrite-strings -Wmissing-declarations
 
-#####################################################################################################
+############################################################################
 # YOU SHOULD NOT NEED TO TOUCH BELOW HERE
-#####################################################################################################
+############################################################################
 
 # Ultrix 2.2 make doesn't expand the value of VPATH.
 VPATH = @srcdir@
@@ -50,18 +57,17 @@ srcdir = @srcdir@
 # Suck Makefile
 PKGNAME=suck
 VERSION_MAJOR=3
-VERSION_MINOR=4
-VERSION_PATCH=1
+VERSION_MINOR=9
+VERSION_PATCH=0
 VERSION=$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
-DVERSION=-DSUCKVER=$(VERSION_MAJOR) -DSUCKVER_MINOR=$(VERSION_MINOR) -DSUCKVER_PATCH=$(VERSION_PATCH)
 
 CC = @CC@
-INSTALL = @INSTALL@
+@SET_MAKE@
 
 CFLAGS = @CFLAGS@
 CPPFLAGS = -I. -I$(srcdir) @CPPFLAGS@
 LDFLAGS = @LDFLAGS@ 
-DEFS = @DEFS@ -DHISTORY_FILE=\"$(HISTORYF)\" $(DB_TYPE)
+DEFS = @DEFS@ -DHISTORY_FILE=\"$(HISTORYF)\" -DSUCK_VERSION=\"$(VERSION)\" $(DB_TYPE)
 LIBS = @LIBS@ 
 
 prefix = @prefix@
@@ -71,22 +77,32 @@ manext = 1
 mandir = $(exec_prefix)/man/man$(manext)
 srcdir = @srcdir@
 MAN = $(srcdir)/man
+SMAN= $(srcdir)/Spanish.docs
+JMAN= $(srcdir)/Japanese.docs
 
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
+AUTOCONF = @AUTOCONF@
+AUTOHEADER = @AUTOHEADER@
 
 #List of .o files suck needs to compile:
-suckobjs = both.o both_phrases.o suck.o suckutils.o killfile.o timer.o killprg.o dedupe.o suck_phrases.o $(CHKHISTORY)
+suckobjs = both.o both_phrases.o suck.o suckutils.o killfile.o timer.o \
+           killprg.o dedupe.o suck_phrases.o active.o batch.o $(CHKHISTORY)
 rpostobjs = both.o both_phrases.o rpost.o rpost_phrases.o
 testhobjs = both.o both_phrases.o testhost.o test_phrases.o
-makepobjs = makephrases.o suck_phrases.o rpost_phrases.o test_phrases.o both_phrases.o
+makepobjs = makephrases.o suck_phrases.o rpost_phrases.o test_phrases.o \
+            both_phrases.o lmove_phrases.o
+lmoveobjs = both.o both_phrases.o lmove.o lmove_phrases.o
  
-all: phrases.h suck rpost testhost
+all: phrases.h suck rpost testhost lmove
 	@echo make done
 
 suck: $(suckobjs)
 	$(CC) $(LDFLAGS) $(DB_LIB_LOC) -o suck $(suckobjs) $(LIBS) $(DB_LIB)
+
+lmove: $(lmoveobjs)
+	$(CC) $(LDFLAGS) -o lmove $(lmoveobjs) $(LIBS)
 
 lpost: lpost.o
 	$(CC) $(LDFLAGS) -o lpost lpost.o $(LIBS)
@@ -108,48 +124,98 @@ phrases.h: makephrases
 
 install: install_bin install_man
 
-install_bin: suck rpost testhost
+install_Japanese: install_bin install_jman
+
+install_Spanish: install_bin install_sman
+
+install_bin: suck rpost testhost lmove
 	- mkdir -p $(bindir)
-	- strip -s suck rpost testhost
+	- strip -s suck rpost testhost lmove
 	$(INSTALL_PROGRAM) suck $(bindir)/suck
 	$(INSTALL_PROGRAM) rpost $(bindir)/rpost
 	$(INSTALL_PROGRAM) testhost $(bindir)/testhost
+	$(INSTALL_PROGRAM) lmove $(bindir)/lmove
 
-install_man: $(MAN)/suck.1 $(MAN)/rpost.1 $(MAN)/testhost.1
+install_man: $(MAN)/suck.1 $(MAN)/rpost.1 $(MAN)/testhost.1 $(MAN)/lmove.1
 	- mkdir -p $(mandir)
+	- rm -f $(mandir)/lpost.$(manext)
 	$(INSTALL_DATA) $(MAN)/suck.1 $(mandir)/suck.$(manext)
 	$(INSTALL_DATA) $(MAN)/rpost.1 $(mandir)/rpost.$(manext)
 	$(INSTALL_DATA) $(MAN)/testhost.1 $(mandir)/testhost.$(manext)
+	$(INSTALL_DATA) $(MAN)/lmove.1 $(mandir)/lmove.$(manext)
 
-install_lpost: lpost
+install_jman: $(JMAN)/suck.1J $(JMAN)/rpost.1J $(JMAN)/testhost.1J $(JMAN)/lpost.1J
+	$(MAKE) -C $(JMAN)
+
+install_sman: $(SMAN)/suck.1 $(SMAN)/rpost.1 $(SMAN)/testhost.1 $(SMAN)/lpost.1
+	$(MAKE) -C $(SMAN)
+
+install_iman: $(IMAN)/suck.1 $(IMAN)/rpost.1 $(IMAN)/testhost.1 $(IMAN)/lpost.1
+	$(MAKE) -C $(IMAN)
+
+install_lpost: lpost $(MAN)/lpost.1
 	- strip -s lpost
 	$(INSTALL_PROGRAM) lpost $(bindir)/lpost
 	$(INSTALL_DATA) $(MAN)/lpost.1 $(mandir)/lpost.$(manext)
 
-installall: install lpost
-	
+installall: install install_lpost
+
 clean:
 	rm -f `find . \( -name "*.o" -o -name "*[~%]" \) -print`
 
-.c.o:
-	$(CC) -c $(CFLAGS) $(DB_INC_LOC) $(GCC_FLAGS) $(DVERSION) $(CPPFLAGS) $(DEFS) $< 
+.c.o: 
+	$(CC) -c $(CFLAGS) $(DB_INC_LOC) $(GCC_FLAGS) $(CPPFLAGS) $(DEFS) $< 
 
-#------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------
+# stuff to make sure configure is up to date (I hope)
+#---------------------------------------------------------------------------
+${srcdir}/configure: configure.in
+	cd ${srcdir} && autoconf
+
+# autoheader might not change config.h.in, so touch a stamp file
+${srcdir}/config.h.in: stamp-h.in
+${srcdir}/stamp-h.in: configure.in
+	cd ${srcdir} && autoheader
+	echo timestamp  > ${srcdir}/stamp-h.in
+
+config.h: stamp-h
+stamp-h: config.h.in config.status
+	./config.status
+
+Makefile: Makefile.in config.status
+	./config.status
+
+config.status: configure
+	./config.status --recheck
+#---------------------------------------------------------------------------
 # stuff for me compiling/debugging this sucker
-#------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------
+
+debug: moreclean
+	make CFLAGS=-g LDFLAGS="-g"
+
+debug_both: moreclean
+	make CFLAGS="-g -DDEBUG1=1" LDFLAGS="-g"
+
+profile: moreclean
+	make CFLAGS="-pg" LDFLAGS="-pg"
 
 cleanrun: 
 	rm -rf Msgs
-	rm -f suck.errlog suck.status suck.newrc suck.index suck.sorted suck.restart suck.lock suck.killlog debug.* gmon.out batch
+	rm -f suck.errlog suck.status suck.newrc suck.index suck.sorted suck.post \
+        suck.restart suck.lock suck.killlog debug.* gmon.out batch *.tmp
 
 moreclean: clean cleanrun 
-	rm -f suck rpost testhost lpost makephrases
+	rm -f suck rpost testhost lpost makephrases lmove
 
 distclean: clean cleanrun cleanconfig moreclean
-	rm -f sucknewsrc sucknewsrc.old suckkillfile suckothermsgs batch phrases.engl 
+	rm -rf test
+	rm -f sucknewsrc sucknewsrc.old suckkillfile suckothermsgs batch \
+        phrases.engl active active.old active-ignore
 
 cleanconfig:
-	rm -f Makefile Japanese.docs/Makefile Italian.docs/Makefile Spanish.docs/Makefile config.h config.cache config.status config.log
+	rm -f Makefile Japanese.docs/Makefile Italian.docs/Makefile \
+        Spanish.docs/Makefile config.h config.cache config.status config.log
 
 maketar: phrases.h distclean
 	tar -czv -f ../$(PKGNAME)-$(VERSION).tar.gz -C .. suck-$(VERSION)

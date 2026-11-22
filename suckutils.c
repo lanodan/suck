@@ -23,6 +23,7 @@
 #endif
 #include <string.h>
 #include <signal.h>
+#include <sys/param.h>
 #include <ctype.h>
 
 #include "suck.h"
@@ -68,8 +69,11 @@ int checkdir(const char *dirname) {
 /*--------------------------------------------------------------*/
 /* if which = FP_SET, store directory in array 			*/
 /* 	    = FP_GET, retrieve directory and add file name 	*/
+/*          = FP_GET_NOPOSTFIX, get without appending postfix   */
+/*	    = FP_GET_POSTFIX, get ONLY the postfix              */
 /* retval     FP_SET, if valid dir, the dir, else NULL		*/
 /*	      FP_GET, full path					*/
+/*	      FP_GET_POSTFIX, only the postfix			*/
 /*--------------------------------------------------------------*/
 const char *full_path(int which, int dir, const char *fname) {
 
@@ -122,6 +126,9 @@ const char *full_path(int which, int dir, const char *fname) {
 	  case FP_SET_POSTFIX:
 		ok = TRUE;
 		strncpy(postfix, fname, sizeof(postfix));
+		break;
+	  case FP_GET_POSTFIX:
+		retptr = postfix;
 		break;
 	  case FP_SET:
 		ok = TRUE;
@@ -179,7 +186,7 @@ int do_lockfile(PMaster master) {
 			/* no pid found */
 			if(unlink(lockfile) == 0) {
 				/* this isn't error so don't put in error log */
-				fprintf(master->msgs, sucku_phrases[3], lockfile, NULL);
+				print_phrases(master->msgs, sucku_phrases[3], lockfile, NULL);
 			}
 			else {
 				error_log(ERRLOG_REPORT, sucku_phrases[4], lockfile, NULL);
@@ -210,7 +217,7 @@ int cmp_msgid(const char *nr1, const char *nr2) {
 	/* which is <xxxxxxxxxxxxxxxxx@place.org */
 	/* use case sensitive compares up to the @ */
 	/* then use case insensitive compares on the organization */
-	/* this is to comform to rfc822 */
+	/* this is to conform to rfc822 */
 	int retval = FALSE;
 
 	if(nr1 != NULL && nr2 != NULL) { 
@@ -232,3 +239,65 @@ int cmp_msgid(const char *nr1, const char *nr2) {
 	return retval;
 
 }
+/*-----------------------------------------------------------------------------*/
+/* move a file from one location to another 				       */
+/*-----------------------------------------------------------------------------*/
+int move_file(const char *src, const char *dest) {
+
+	char block[MAXLINLEN];
+	FILE *fpi, *fpo;
+	int retval = RETVAL_OK;
+	size_t nrread;
+
+	
+
+	/* first try the easy way */
+	if(src == NULL || dest == NULL) {
+		error_log(ERRLOG_REPORT, sucku_phrases[9], NULL);
+		retval = RETVAL_ERROR;
+	}
+	else if(rename(src, dest) != 0) {
+		if(errno != EXDEV) {
+			MyPerror(src);
+			retval = RETVAL_ERROR;
+		}
+		else {
+			/* can't rename, try to copy file */
+			if((fpi = fopen(src, "r")) == NULL) {
+				MyPerror(src);
+				retval = RETVAL_ERROR;
+			}
+			else if(( fpo = fopen(dest, "w")) == NULL) {
+				fclose(fpi);
+				MyPerror(dest);
+				retval = RETVAL_ERROR;
+			}
+			else {
+				while(retval == RETVAL_OK && (nrread = fread(block, sizeof(char), MAXLINLEN, fpi)) > 0) {
+					if(fwrite(block, sizeof(char), nrread, fpo) != nrread) {
+						error_log(ERRLOG_REPORT, sucku_phrases[7],  dest, NULL);
+						retval = RETVAL_ERROR;
+					}
+				}
+				if(ferror(fpi) != 0) {
+					error_log(ERRLOG_REPORT, sucku_phrases[8], src, NULL) ;
+				}
+				fclose(fpi);
+				fclose(fpo);				
+			}
+			/* now that copy is successful, nuke it */
+			if(retval == RETVAL_OK) {
+				unlink(src);
+			}
+		}
+	}
+	return retval;
+}
+
+
+
+
+
+
+
+

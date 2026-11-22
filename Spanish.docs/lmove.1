@@ -1,0 +1,130 @@
+.\" Traducción española por Abraham Nevado <nevado@redestb.es>
+.\" y                       Simon J Mudd   <sjmudd@redestb.es>
+.\" 30 de agosto de 1997 - ultima modificación 19 de enero de 1998
+.\" $Revision: 1.2 $
+.TH LMOVE 1
+.SH NAME
+lmove - mueve artículos a directorios /news/group/number
+.SH SYNOPSIS
+.I lmove
+.BI
+-d directorio
+[
+.BI
+-c filename
+]
+[
+.BI
+-a archivo
+]
+[
+.BI
+-e | -E archivo
+]
+[
+.BI
+-l archivo de frases
+]
+[
+.BI
+-D
+]
+
+.SH OPTIONS
+\-d directorio
+
+Esta opción es necesaria. Este es el directorio que contiene los artículos
+que lmove ha de poner en estructura de directorio.  Debería estar en la
+mismo sistema de archivos que el directorio BASE (ver ARCHIVO ACTIVO a
+continuación), como algunos comandos move de unix no pueden
+trasladar archivos de un sistema de archivos a otro.
+
+\-c filename
+
+Esta es la localización del archivo de configuración. Ver descripción a
+continuación. Si esta opción no es especificada, se usará por defecto:
+"lmove-config".
+
+\-a archivo
+
+Esta es la localización del archivo activo. Ver descripción del archivo
+seguidamente.  Si esta opción no es incluida, será usado por defecto "activo".
+
+\-e | \-E archivo
+
+Estas opciones enviarán todos los mensajes de error(normalmente escritos en
+stderr), al archivo alternativo.  La opción en minúscula, -e, enviará los
+mensajes de error al al compiled-in default defined in suck_config.h.  La
+opción en mayúscula, -E, requiere como parámetro el archivo. Todos los
+mensajes de error serán enviados a este archivo.
+
+\-l phrase_file
+
+Esta opción indica a lmove cargar un archivo alternativo de frases, en lugar
+de usar the built-in messages.  Esto te permite que lmove imprima frases en
+otro lenguaje, o personalizar los mensajes sin reconstruir lmove.
+Ver "LAS FRASES EXTRANJERAS" en suck.1 para más detalles.
+
+\-D 
+
+Esta opción dice a lmove que mande varios mensajes de depuración a debug.suck.
+Es usada primariamente por los desarrolladores para detectar varios problemas.
+
+.SH DESCRIPTION
+
+Lmove tomará artículos en un único directorio (como el directorio usado por
+suck para bajar los artículos), y los pondrá en un árbol de directorio basado
+en los grupos de noticias.  Lmove usa un archivo "activo" para determinar dónde poner los
+diferentes artículos, y para guardar información de los artículos numerados
+más altos en estos directorios.  Lmove revisará cada artículo para buscar un
+grupo coincidente en el archivo activo, luego almacena el artículo en ese
+directorio de grupo, aumentando el número más alto para ese grupo.
+
+.SH CONFIGURATION FILE
+
+El archivo de configuración debería contener dos líneas::
+
+.RS
+BASE=/usr/spool/news
+.RE
+.RS
+ACTIVE=/usr/spool/news/active
+.RE
+
+BASE= dice a lmove el directorio base para los artículos. Donde los
+artículos se almacenan.
+
+ACTIVE= dice a lmove dónde encontrar el archivo activo, descrtio a
+continuación.
+
+
+.SH ARCHIVO ACTIVO
+
+El archivo activo consiste en el nombre de los grupos, el número de artículo
+actual más alto, el número de artículo actual más bajo y el estado actual
+del grupo. Lmove sólo usa el nombre de los grupos y el número de artículo
+más alto. El otro campo está sólo reescrito, y no modificado de ninguna
+manera. Aparece aquí para utilizarse con otros programas.
+
+Ejemplo:
+
+.RS
+comp.os.linux.announce 1000 1 y
+.RE
+
+Las líneas son una lista de los grupos válidos en los que lmove almacenará los
+artículos. El número de artículo más alto para un nuevo grupo debería ser 0
+o 1.
+
+Una vez completado, lmove moverá el actual archivo activo a "activo.old", y
+escribirá un nuevo archivo activo con el nuevo número alto de artículo.
+Cualquier artículo que no se mueva al directorio estructura es abandonado en
+el directorio original del artículo.
+
+.SH VALORES DE RETORNO
+0 satisfactorio, -1 fallo.
+.de R$
+Revision \\$$3, \\$$4
+..
+.SH "VER TAMBIEN"
+suck(1), rpost(1), testhost(1).

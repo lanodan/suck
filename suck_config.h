@@ -2,55 +2,39 @@
 #define _SUCK_CONFIG_H 1
 
 /* Config Options */
-
-/*  DEBUG Options */
-/*  DEBUG1 = debug both.c, particularly sgetline() and fileargs.c */
-/*  DEBUG2 = debug suck.c */
-/*  DEBUG3 = debug rpost.c  */
-/*  dont define DEBUG2 and DEBUG3 at same time  */
-/*  warning if you have DEBUG1 defined when you compile suck.c, you will get */
-/*  every line of every article in the debug output file twice, this can  */
-/*  create a debug file many megs in size */
-/* #define DEBUG1 1 */
-/* #define DEBUG2 1 */
-/* #define DEBUG3 1 */
-
 #define DEFAULT_NNRP_PORT 119 	/* port to talk to on remote machine */
-
-#ifdef HAVE_GETTIMEOFDAY	/* need gettimeofday() function */
-/*  TIMER Option */
-/* To see the approximate BPS while downloading articles, uncomment this */
-/* If you don't like it, or want a tiny speed increase, comment this out */
-#define TIMER 1
-#endif /* HAVE_GETTIMEOFDAY */
+#define LOCAL_PORT 119		/* port to talk to on local host */
 
 /* If you don't EVER plan to use the KILLFILE stuff, comment this out for a slight speed increase */
 /* If you want to, or plan to, use the KILLFILE stuff, uncomment this */
-#define KILLFILE 1
-
-/* If you want the kill/keep file routine to keep articles that are both flagged as */
-/* delete and keep (either by matching both a delete group and a keep group, or by not matching */
-/* both a delete group and keep group), then uncomment this next one.  If you want them deleted, */
-/* then comment this out */
-#define KILL_TIEBREAKER_KEEP 1
-
-/* If your system doesn't have regex.h, you can't use this */
-/* If you don't want to use regex for the killfile stuff comment */
-/* out the #define USE_REGEX 1 line */
-#ifdef HAVE_REGEX_H
-#define USE_REGEX 1
-#endif
+#define KILLFILE 1 
 
 /* This is the character used in killfiles to tell if we should do a case sensitive or a */
 /* case insensitive compare.  It can be overridden in a killfile. */
 #define KILLFILE_QUOTE '"'
+
+/* This is the character that is used as a comment flag in col 0 in killfiles */
+#define KILLFILE_COMMENT_CHAR '#'
+
+/* this is the start buffer size for the killfile get body routine */
+/* this should be close to the max size of the message you expect to get */
+#define KILL_BODY_BUF_SIZE 80960
+
+/* this is the amount of extra memory we grab everytime we need to increase memory */
+/* typically for huge articles */
+/* WARNING, THIS MUST BE BIGGER THAN MAXLINLEN */
+#define KILL_CHUNK_BUF_INCREASE 10240
+
+/* if using -A (scan active file), this is the number I use for lastread when I get */
+/* a new group, 0 = all messages, -100 means get last 100 messages */
+#define ACTIVE_DEFAULT_LASTREAD -100
 
 #ifdef HAVE_SELECT	/* if the system doesn't support select, then you can't use this */
 /* if you want to timeout if no read after X seconds define this   */
 /* as number of seconds before timeout 				   */
 /* else, comment it out.  If you comment it out, if link goes down */
 /* we'll just sit, twiddling our bits, until whenever.             */
-#define TIMEOUT 300
+#define TIMEOUT 90
 #endif /* HAVE_SELECT */
 
 /* signal which will interrupt us DON'T USE SIGKILL OR SIGSTOP */
@@ -70,16 +54,7 @@
 /* knows where to find the history file 			    */
 #define CHECK_HISTORY 1
 
-/* To use the old, slow flat file check history routines, uncomment this and */
-/* CHECK_HISTORY above.  If you use DBM, DBZ, or NDBM, this doesn't apply */
-/* #define CHECK_HISTORY_OLD 1 */
-
-/* don't comment this out */
-#ifndef HISTORY_FILE
-#define HISTORY_FILE "/usr/lib/news/history"
-#endif
-
-/* If your system doesn't like the lock file stuff in suck.c  */
+/* If your system doesn't like the lock file stuff in suck.c or lmove.c */
 /* comment this out */
 #define LOCKFILE 1
 
@@ -102,6 +77,11 @@
 #define N_OLDRC 	"sucknewsrc"		/* what newsgroups to download			 */
 #define N_KILLFILE 	"suckkillfile"		/* Parameter file for which articles s NOT to download */
 #define N_SUPPLEMENTAL 	"suckothermsgs"		/* list of article nrs to add to our list to download */
+#define N_LMOVE_ACTIVE  "active"		/* list of active newsgroups for lmove to read */
+#define N_ACTIVE_IGNORE "active-ignore"         /* list of newsgroups ignored by read local active option */
+#define N_LMOVE_CONFIG  "lmove-config"          /* config file for lmove */
+
+#define N_PHRASES "/usr/local/lib/suck.phrases"	/* default location for phrase file */
 
 /* TEMP FILES created */
 #define N_NEWRC "suck.newrc"
@@ -109,7 +89,9 @@
 #define N_RESTART "suck.restart"
 #define N_KILLLOG "suck.killlog"
 #define N_LOCKFILE "suck.lock"
-#define N_PHRASES "suck.phrases"
+#define N_TMP_EXTENSION ".tmp"		/* added to file in process of being downloaded */
+#define N_LMOVE_LOCKFILE "lmove.lock"
+#define N_POSTFILE "suck.post"
 
 /* Old copy of N_OLDRC (saved just in case) */
 #define N_OLD_OLDRC    "sucknewsrc.old"
@@ -146,6 +128,18 @@
 /* length of string sent to killprg (min length must be 8) */
 #define KILLPRG_LENGTHLEN 8 
 
+/* mode for directory when creating in lmove */
+#define LMOVE_DEFAULT_DIR_MODE 0755	/* in octal */
+
+/* longest line possible in a message for lmove */
+#define LMOVE_MAXLINLEN 8192
+
+/* mode for active file when rewriting it */
+#define LMOVE_ACTIVE_MODE 0755		/* in octal */
+
+/* max number of args for suck to pass to lmove */
+#define LMOVE_MAX_ARGS 12
+
 /*  Internal buffer size shouldn't need to change */
 #define MAXLINLEN 4096
 
@@ -156,6 +150,10 @@
 #define PHRASES_SEPARATOR '%'
 #define PHRASES_VAR_CHAR 'v'
 
+/* phrase that defines a group name in suck.sorted */
+#define RESTART_GROUP "GROUP"
+
+/*------------------------------------------------------------*/
 /* the following should be handled by the auto-config stuff */
 /* shouldn't need to touch below here */
 
@@ -164,7 +162,22 @@
 #endif
 
 #ifndef PATH_MAX	/* in case you don't have it */
+#ifdef _POSIX_PATH_MAX
 #define PATH_MAX _POSIX_PATH_MAX
+#endif
+#endif
+
+#ifndef PATH_MAX
+#ifdef MAXPATHLEN
+#define PATH_MAX MAXPATHLEN
+#endif
+#endif
+#ifndef PATH_MAX
+
+/* for Solaris */
+#ifdef MAXNAMLEN
+#define PATH_MAX MAXNAMLEN
+#endif
 #endif
 
 #endif /* _SUCK_CONFIG_H */

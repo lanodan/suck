@@ -1,7 +1,7 @@
 /* the default phrases */
-const char *default_rpost_phrases[] = { \
+const char *default_rpost_phrases[] = {
 	"Usage: %v1% hostname [@filename] [-s | -S name] [-e | -E name] [-b batch_file -p dir_prefix]",	/* 0 */
-	"-U userid -P passwd] [-M] [-N portnr] [-f filter_args] <RETURN>\n",
+	"-U userid -P passwd] [-M] [-N portnr] [-T timeout] [-u] [-f filter_args] <RETURN>\n",
 	"\tIf used, filter_args MUST be last arguments on line\n",
 	"Sorry, Can't post to this host\n",
 	"Closing connection to %v1%\n",
@@ -30,8 +30,10 @@ const char *default_rpost_phrases[] = { \
 	"No Userid Specified\n",
 	"No Password Specified\n",
 	"No NNRP port Specified\n",
-	"Invalid argument: %v1%, ignoring\n",		/* 30 */
-	"No language file specified\n"
+	"Invalid argument: %v1%, ignoring\n", /* 30 */
+	"No language file specified\n",
+	"No userid or password provided, unable to auto-authenticate",
+					
 };
 
 int nr_rpost_phrases = sizeof(default_rpost_phrases)/sizeof(default_rpost_phrases[0]);

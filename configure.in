@@ -1,6 +1,13 @@
 dnl Process this file with autoconf to produce a configure script.
+dnl Autoconfigure input file for suck
+
 AC_INIT(suck.c)
 AC_CONFIG_HEADER(config.h)
+
+# we want these before the checks, so the checks can modify their values
+test -z "$CFLAGS" && CFLAGS=-O2 AC_SUBST(CFLAGS)
+test -z "$LDFLAGS" && LDFLAGS=-s AC_SUBST(LDFLAGS)
+
 AC_PROG_CC
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
@@ -27,6 +34,6 @@ AC_HEADER_TIME
 
 dnl Checks for library functions.
 AC_TYPE_SIGNAL
-AC_CHECK_FUNCS(gettimeofday select strerror memmove)
+AC_CHECK_FUNCS(gettimeofday select strerror memmove setvbuf)
 
-AC_OUTPUT(Japanese.docs/Makefile Italian.docs/Makefile Spanish.docs/Makefile Makefile)
+AC_OUTPUT(Japanese.docs/Makefile Spanish.docs/Makefile Makefile, echo timestamp > stamp-h)

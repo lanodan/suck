@@ -1,4 +1,6 @@
-.\" $Revision: 1.3 $
+.\" Traduccíon española por Simon Mudd <sjmudd@redestb.es>
+.\" y                   Abraham Nevado <nevado@redestb.es>
+.\" $Revision: 1.4 $
 .\" $Date: 1997/01/30 21:46:15 $
 .TH RPOST 1
 .SH NOMBRE
@@ -49,6 +51,16 @@ número_puerto
 [
 .BI \-l
 archivo_de_frases
+]
+[
+.BI \-D
+]
+[
+.BI \-T
+timeout
+]
+[
+.BI \-u
 ]
 [
 .BI -f
@@ -111,10 +123,24 @@ las específcadas en la línea de comando.
 archivo_de_frases
 
 Esta opción le indica a rpost que cargue un archivo alternativo para las
-frases, en vez de usar las frases compilados por defecto.  Esto permite
+frases, en vez de usar las frases compiladas por defecto.  Esto permite
 usar rpost con frases de otros idiomas, o que se puede modificar los
 mensajes, sin tener que recompilar el programa.  Ver "FRASES EN IDIOMAS
 EXTRANJEROS" en suck.1 para más información.
+
+.BI \-D
+Esta opción le indica a rpost que guarde los mensajes de depuración en el
+archivo "debug.suck", su uso principal es para el autor de este software.
+
+.BI \-T
+Esta opción tiene prioridad sobre la opción TIMEOUT compilada por defecto.
+Es el tiempo que rpost espera para datos del host remoto, antes de saltar el
+temporizador y abortar.
+
+.BI \-u
+Esta opción dice a rpost que envie el comando AUTHINFO USER inmediatamente
+después de conectarse al servidor remoto, en lugar de esperar a una petición
+de autentificación. Debes suprimir \-U y \-P cuando uses esta opción. 
 
 .SH MODO STDIN
 rpost
@@ -154,16 +180,16 @@ del archivo que contien el artículo. Por ejemplo:
 -b /usr/spool/news/out.going/pixi
 .RE
 
-Si hay algún problema subiendo un mensáje específico, un archvio de
+Si hay algún problema subiendo un artículo específico, un archivo de
 "fallo" será creado.  Se llamará "archivo-batch".fail, y contendrá las
-líneas de los mensajes de el archivo-batch que no hayan sido correctamente
-subidos.  Este archvio puede ser usado para reejecutar rpost con los
-mensajes fallidos.  NOTA: mensajes duplicados NO son considerados un
+líneas de los artículos de el archivo-batch que no hayan sido correctamente
+subidos.  Este archivo puede ser usado para reejecutar rpost con los
+artículos fallidos.  NOTA: artículos duplicados NO son considerados un
 error para el archivo fail.
 
 -d 
 
-Si el envío del mensaje es satisfactorio, está opción hará que rpost borre
+Si el envío del artículo es satisfactorio, está opción hará que rpost borre
 el archivo-batch llamado con la opción -b.
  
 -p prefijo
@@ -190,6 +216,9 @@ específicado en cualquier lugar en la línea de comandos DEPUES del argumento
 
 $$i - Cuando rpost llama a tu filtro, reemplazará $$i con el nombre
 del archivo del artículo para ser modificado.
+
+filter - nombre del pragrama a que llamar.  Lo que sigue filtro, EXCEPTO $$o,
+son argumentos al pasar al filto.
 
 arg1 - El primer argumento para tu filtro programa/script. Debería ser como
 $$i

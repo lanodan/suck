@@ -36,29 +36,34 @@ struct {
 	int response;
 } cmds[]  = { { "help", 100 }, 
 	      { "list", 215 },
+	      { "list newsgroups", 215 },
 	      { "newgroups", 231},
 	      { "mode reader\r\nnewgroups", 231},
+	      
 };
 
-enum { CMD_HELP, CMD_LIST, CMD_NEWGRP };
+enum { CMD_HELP, CMD_LIST, CMD_DESC, CMD_NEWGRP };
 enum { RETVAL_OK = 0, RETVAL_ERROR = -1, RETVAL_BAD_DATES = -2, RETVAL_NOAUTH = -3};
 
 /*-functions----*/
 int do_a_command(int, int, FILE *, char *, char *, char *);
 int check_date_format(char *, char *, char *);
-void load_phrases(char *);
+void load_phrases(const char *);
 void free_phrases(void);
 
 /*------------------------------------------------------------------*/
-void main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
 
-	int sockfd, response, loop, cmd, retval = RETVAL_OK;
+	int sockfd, response, loop, cmd, quiet, retval = RETVAL_OK;
 	struct hostent *hi;
+	struct stat sbuf;
 	unsigned short int portnr;
 	FILE *fptr = stdout;		/* used to print output to */
 
-	char *host, *buf, *ptr, *cmdargs, *userid, *passwd, *phrases;
+	char *host, *buf, *ptr, *cmdargs, *userid, *passwd;
 	char ndate[14];	/* 6 for yymmdd 6 for hhmmss and 1 for space and 1 for null */
+
+	const char *phrases;
 
 	/* set up defaults */
 	host = getenv("NNTPSERVER");
@@ -69,6 +74,16 @@ void main(int argc, char *argv[]) {
 	passwd = NULL;
 	userid = NULL;
 	phrases = NULL;
+	quiet = FALSE;		/* do we show status or not */
+
+	/* have to do this next so if set on cmd line, overrides this */
+#ifdef N_PHRASES		/* in case someone nukes def */
+	if(stat(N_PHRASES, &sbuf) == 0 && S_ISREG(sbuf.st_mode)) {
+		/* we have a regular phrases file make it the default */
+		phrases = N_PHRASES;
+	}
+	
+#endif
 
 	if(argc > 1 && argv[loop][0] != '-') {
 		host = argv[loop++];
@@ -79,6 +94,12 @@ void main(int argc, char *argv[]) {
 			  case 'a': 
 				cmd = CMD_LIST;
 				break;
+			  case 'd':
+				  cmd = CMD_DESC;
+				  break;
+			  case 'q':
+				  quiet = TRUE;
+				  break;
 			  case 'n':
 				cmd = CMD_NEWGRP;
 				/* next two args must be date & time YYMMDD HHMMSS format */
@@ -160,6 +181,17 @@ void main(int argc, char *argv[]) {
 					phrases = argv[++loop];
 				}
 				break;
+#ifdef TIMEOUT
+			case 'T':  /* timeout */
+				if(loop+1 == argc) {
+					error_log(ERRLOG_REPORT, test_phrases[13], NULL);
+					retval = RETVAL_ERROR;
+				}
+				else {
+					TimeOut = atoi(argv[++loop]);
+				}
+				break;
+#endif
 			  default:
 				retval = RETVAL_ERROR;
 				error_log(ERRLOG_REPORT, test_phrases[7], argv[loop], NULL);
@@ -174,7 +206,7 @@ void main(int argc, char *argv[]) {
 	if(retval == RETVAL_OK) {
 		load_phrases(phrases);	/* this is here so everything displays okay */
 
-		sockfd = connect_to_nntphost( host, &hi, fptr, portnr);
+		sockfd = connect_to_nntphost( host, &hi, (quiet == FALSE)?  fptr : NULL, portnr);
 		if(sockfd < 0 ) {
 			retval = RETVAL_ERROR;
 		}
@@ -184,8 +216,10 @@ void main(int argc, char *argv[]) {
 		}
 		else {
 			ptr = number(buf, &response);
-			fprintf(fptr,"%s",ptr);	/* print it */
-
+			if(quiet == FALSE) {
+				fprintf(fptr,"%s",ptr);	/* print it */
+			}
+			
 			if(response != 200 && response != 201) {
 				/* not a valid response */
 				retval = RETVAL_ERROR;
@@ -327,20 +361,27 @@ int check_date_format(char *dates, char *indate, char *intime) {
 /* THE strings in this routine is the only one not in the arrays, since           */
 /* we are in the middle of reading the arrays, and they may or may not be valid.  */
 /*--------------------------------------------------------------------------------*/
-void load_phrases(char *phrases) {
+void load_phrases(const char *phrases) {
 
 	int error=TRUE;
 	FILE *fpi;
-
+	char buf[MAXLINLEN];
+	
 	if(phrases != NULL) {
 		
 		if((fpi = fopen(phrases, "r")) == NULL) {
 			MyPerror(phrases);
 		}
-		else if((both_phrases = read_array(fpi, NR_BOTH_PHRASES, TRUE)) != NULL) {
-			read_array(fpi, NR_RPOST_PHRASES, FALSE);	/* skip these */
-			if((test_phrases = read_array(fpi, NR_TEST_PHRASES, TRUE)) != NULL) {
-				error = FALSE;
+		else {
+			fgets(buf, MAXLINLEN, fpi);
+			if(strncmp( buf, SUCK_VERSION, strlen(SUCK_VERSION)) != 0) {
+				error_log(ERRLOG_REPORT, "Invalid Phrase File, wrong version\n", NULL);
+			}
+			else if((both_phrases = read_array(fpi, NR_BOTH_PHRASES, TRUE)) != NULL) {
+				read_array(fpi, NR_RPOST_PHRASES, FALSE);	/* skip these */
+				if((test_phrases = read_array(fpi, NR_TEST_PHRASES, TRUE)) != NULL) {
+					error = FALSE;
+				}
 			}
 		}
 		fclose(fpi);

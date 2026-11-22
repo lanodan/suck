@@ -20,36 +20,23 @@ void free_array(int, char **);
 char *do_a_phrase(char []);
 void print_phrases(FILE *, const char *, ...);
 char *str_int(int);
+void do_debug(const char *, ...);
+void do_debug_binary(int, const char *);
+
+#define N_DEBUG "debug.suck"
 
 enum { MYSIGNAL_SETUP, MYSIGNAL_BLOCK, MYSIGNAL_UNBLOCK, MYSIGNAL_ADDPIPE };
 enum { ERRLOG_SET_FILE, ERRLOG_SET_STDERR, ERRLOG_REPORT };
 
 #define SOCKET_PROTOCOL 0	/* so testhost.c can get at it */
 
-/* debugging options. no need to change it */
-#ifdef DEBUG1
-#define DEBUG 1
-#endif
-
-#ifdef DEBUG2
-#define DEBUG 1
-#define N_DEBUG "debug.suck"
-#endif
-
-#ifdef DEBUG3
-#define N_DEBUG "debug.rpost"
-#define DEBUG 1
-#endif
-
-#ifdef DEBUG
-void do_debug(const char *fmt, ...);
-#ifndef N_DEBUG 
-#define N_DEBUG "debug.both"
-#endif
-#endif
-
 #ifndef FALSE
 #define FALSE 0
 #define TRUE !FALSE
 #endif
+
+#ifdef TIMEOUT
+extern int TimeOut;		/* used to pass TimeOut value to sgetline() */
+#endif
+
 #endif /* _SUCK_BOTH_H */

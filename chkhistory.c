@@ -14,80 +14,9 @@
 #include "chkhistory.h"
 #include "suckutils.h"
 #include "phrases.h"
-
-#ifdef TIMER
 #include "timer.h"
-#endif
 
-#ifdef CHECK_HISTORY_OLD
 
-/*------------------------------------------------------------*/
-void chkhistory(PMaster master) {
-
-	FILE *fhist;
-	char linein[MAXLINLEN+1], *ptr;
-	int found, nrfound = 0;
-	PList curr, prev;
-
-	if((fhist = fopen(HISTORY_FILE, "r")) == NULL) {
-		error_log(ERRLOG_REPORT, chkh_phrases[0], HISTORY_FILE, NULL);
-	}
-	else {
-		print_phrases(master->msgs, chkh_phrases[2], NULL);
-		fflush(master->msgs);	/* so msg gets printed */
-#ifdef TIMER
-		TimerFunc(TIMER_START, 0L,NULL);
-#endif
-
-		/* read each line and check on our list */
-		while(fgets(linein, MAXLINLEN, fhist) != NULL) {
-			/* truncate at end of article-nr */
-			if((ptr = strchr(linein, '>'))  == NULL) {
-				error_log(ERRLOG_REPORT, chkh_phrases[3], linein, NULL);
-			}
-			else {
-				*(ptr+1) = '\0';
-
-				/* now that we've isolated the article nr, search our list */
-				curr = master->head;
-				prev = NULL;
-				found = FALSE;
-				while(found == FALSE && curr != NULL) {
-					if(cmp_msgid(curr->msgnr, linein) == TRUE) {
-						found = TRUE;
-					}
-					else {
-						prev = curr;
-						curr = curr->next;
-					}
-				}		
-				if(found == TRUE) {
-#ifdef DEBUG2
-					do_debug("Matched %s, nuking\n", curr->msgnr);
-#endif
-					/* Already on system, remove from list */
-					nrfound++;
-					master->nritems--;
-					if(prev == NULL) {
-						/* remove master node */
-						master->head = curr->next;
-					}
-					else {
-						prev->next = curr->next;
-					}
-					free_one_node(curr);
-				}
-			}			
-		}
-#ifdef TIMER
-		TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
-#endif
-		fclose(fhist);
-		print_phrases(master->msgs, chkh_phrases[4], str_int(nrfound), NULL);
-	}
-}
-/*---------------------------------------------------------------------------------------------------------------*/
-#else /* CHECK_HISTORY_OLD */
 /*---------------------------------------------------------------------------------------------------------------*/
 /* In order to not check the entire linked list every time, let's try something different			 */
 /* We'll build an array of pointers to the linked list, based on the first character of the article id		 */
@@ -114,9 +43,8 @@ void chkhistory(PMaster master) {
 	else {
 		print_phrases(master->msgs, chkh_phrases[1], NULL);
 		fflush(master->msgs);	/* so msg gets printed */
-#ifdef TIMER
 		TimerFunc(TIMER_START, 0L, NULL);
-#endif
+
 		/* pass one */
 		/* count the letters, so we can build the array and also index it */
 		
@@ -201,11 +129,8 @@ void chkhistory(PMaster master) {
 			}
 			free(lets);
 		}
-#ifdef TIMER
 		TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
-#endif
 		fclose(fhist);
 		print_phrases(master->msgs, chkh_phrases[4], str_int(nrfound), NULL);
 	}
 }
-#endif /* CHECK_HISTORY_EXP */

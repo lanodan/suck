@@ -3,6 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+
 #ifdef HAVE_DIRENT_H
 # include <dirent.h>
 #else
@@ -15,9 +19,7 @@
 # endif
 #endif
 
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
+
 
 #ifdef HAVE_SYS_WAIT_H
 # include <sys/wait.h>
@@ -63,7 +65,7 @@ int find_in_path(char *);
 RETSIGTYPE pipe_sighandler(int);
 #endif
 
-int killprg_forkit(PKillStruct mkill, char *args) {
+int killprg_forkit(PKillStruct mkill, char *args, int debug) {
 /*------------------------------------------------------------------------ */
 /* take the char string args, parse it to get the program to check to see  */
 /* if it exists, then try to fork, execl, and set up pipe to it.  If       */
@@ -106,9 +108,9 @@ int killprg_forkit(PKillStruct mkill, char *args) {
 		prg[i] = NULL;		/* must do this for execv */
 	}
 
-#ifdef DEBUG2
-	do_debug("Prg = %s, %d args\n", prg[0], i);
-#endif
+	if(debug == TRUE) {
+		do_debug("Prg = %s, %d args\n", prg[0], i);
+	}
 	if(prg[0] != NULL && find_in_path(prg[0]) == TRUE ) { 
 		/* okay it exists, fork, execl, etc */
 		/* first set up our pipes */
@@ -156,7 +158,7 @@ int killprg_forkit(PKillStruct mkill, char *args) {
 				close(newstdout[1]);	/* will only be reading from new stdout */
 				/* so subroutine can read/write to child */
 				mkill->child.Stdin = newstdin[1];
-				mkill->child.Stdout = newstdout[0];
+                                mkill->child.Stdout = newstdout[0];
 				mkill->killfunc = chk_msg_kill_fork;	/* point to our subroutine */
 			}
 		}
@@ -228,41 +230,46 @@ int find_in_path(char *prg) {
 	return retval;
 }
 /*----------------------------------------------------------------------------*/
-int chk_msg_kill_fork(PKillStruct pkill, char *header) {
+int chk_msg_kill_fork(PMaster master, PKillStruct pkill, char *header, int headerlen) {
 	/* write the header to ChildStdin, read from ChildStdout */
 	/* read 0 if get whole message, 1 if skip */
 	/* return TRUE if kill article, FALSE if keep  */
 
-	int retval = FALSE, y, status;
+	int retval = FALSE, status;
 	char keepyn, keep[4], len[KILLPRG_LENGTHLEN+1];
-	pid_t waitstatus;	
+	pid_t waitstatus;
 
 	/* first make sure our child is alive WNOHANG so if its alive, immed return */
 	keepyn = -1;	/* our error status */
 	waitstatus = waitpid(pkill->child.Pid, &status, WNOHANG);
 	if(waitstatus == 0) { /* child alive */
+		if(master->debug == TRUE) {
+			do_debug("Writing to child\n");
+		}
 		/* first write the length down */
-		y = strlen(header);
-#ifdef DEBUG2
-		do_debug("\nTrying to write len %d to child:\n%s", y,header);
-#endif
-		sprintf(len, "%-*d\n", KILLPRG_LENGTHLEN-1, y);
+		sprintf(len, "%-*d\n", KILLPRG_LENGTHLEN-1, headerlen);
 		if(write(pkill->child.Stdin, len, KILLPRG_LENGTHLEN) <= 0) {
 			error_log(ERRLOG_REPORT,  killp_phrases[4], NULL);		
 		}
 		/* then write the actual header */
-		else if(write(pkill->child.Stdin, header,y) <= 0) {
+		else if(write(pkill->child.Stdin, header, headerlen) <= 0) {
 			error_log(ERRLOG_REPORT,  killp_phrases[4], NULL);
 		}
 		/* read the result back */
-		else if(read(pkill->child.Stdout, &keep, 2) <= 0) {
-			error_log(ERRLOG_REPORT,  killp_phrases[5], NULL);
-		}
 		else {
-			keepyn = keep[0] - '0';	/* convert ascii to 0/1 */ 
-#ifdef DEBUG2
-			do_debug("\nRead from child: %s :\n", keep);
-#endif
+			if(master->debug == TRUE) {
+				do_debug("Reading from child\n");
+			}
+			if(read(pkill->child.Stdout, &keep, 2) <= 0) {
+				error_log(ERRLOG_REPORT,  killp_phrases[5], NULL);
+			}
+			else {
+				if(master->debug == TRUE) {
+					keep[2] = '\0';	/* just in case */
+					do_debug("killprg: read '%s'\n", keep);
+				}
+				keepyn = keep[0] - '0';	/* convert ascii to 0/1 */ 
+			}
 		}
 	}
 	else if(waitstatus == -1) { /* huh? */
@@ -278,6 +285,25 @@ int chk_msg_kill_fork(PKillStruct pkill, char *header) {
 		break;
 	  case 1:
 		retval = TRUE;
+		if(pkill->logyn != KILL_LOG_NONE) {
+			/* log it */
+			if(pkill->logfp == NULL) {
+				if((pkill->logfp = fopen(full_path(FP_GET, FP_TMPDIR, N_KILLLOG), "a")) == NULL) {
+					MyPerror(killp_phrases[12]);
+				}
+			}
+			if(pkill->logfp != NULL) {
+				/* first print our one line reason */
+				print_phrases(pkill->logfp, killp_phrases[13], (master->curr)->msgnr, NULL);
+				if(pkill->logyn == KILL_LOG_LONG) {
+					/* print the header as well */
+					print_phrases(pkill->logfp, "%v1%", header, NULL);
+				}
+			}
+		}
+		if(master->debug == TRUE) {
+			do_debug("Kill program killed: %s", header);
+		}
 		break;
 	  default: /* error in child don't use anymore */
 		retval = FALSE;

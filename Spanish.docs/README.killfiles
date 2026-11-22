@@ -1,0 +1,81 @@
+Efectivamente con la Versión 3.6.0, el formato de suckkillfile ha cambiado.
+
+Hice esto porque seguí recibiendo sugerencias para añadir la capacidad de
+"mirar" diferentes cabeceras, y la sección de código encargada de la
+verificación, se estaba haciendo cada vez más grande y lenta.
+
+Han sido reemplazados: FROM=, PATH=, SUBJECT=, NNTPHOST= y los separadores. 
+En su lugar he añadido la habilidad de mirar cualquier linea de
+cabecera. Además, cada patrón de búsqueda debe estar en una línea
+diferente. Ejemplo:
+
+FROM=boby,anyone,noone  deberá ser reemplazado por:
+
+From:boby
+From:anyone
+From:noone
+
+Advierte que el campo de cabecera coincide con lo que se ve en un mensaje.
+Por eso si se deseas escanear el campo Followup-To, deberías decir:
+
+Followup-To:
+
+También, el comienzo de la línea para el escaneo es el primer carácter
+después del espacio que sigue a la cabecera
+
+From: boby@pixi.com
+
+El primer carácter escaneado es la primera 'b' de boby.
+
+Las opciones LOWLINES=, HILINES=, NRGRPS=, QUOTE=, and GROUP=  continúan
+igual.
+
+Las opcioens nuevas son:
+
+HEADER:, GROUP_OVERRIDE_MASTER, and TIEBREAKER_DELETE
+
+HEADER: te permite escanear la cabecera entera, en vez de sólo la linea de 
+cabecera.
+
+GROUP_OVERRIDE_DELETE 
+
+Te permite actuar en el grupo de archivos que coincide con las restricciones
+del principal. En versiones anteriores, si un mensaje coincidía con el
+archivo principal, el grupo de archivo nunca era chequeado. Esta opción
+dice, ¡oye!, si obtienes una marca de borrado, chequea el grupo de archivos.
+Si el grupo de archivo dice mantener, entonces matenlo.
+
+TIEBREAKER_DELETE
+
+Ésta toma el lugar de #define en suck_config.h. Por defecto, en suck, si un
+mensaje está en el grupo de mantener y en el de borrar, lo mantiene. Esta
+opción le dice a suck que lo borre en lugar de conservarlo.
+
+Ambas GROUP_OVERRIDE_DELETE, y TIEBREAKER_DELETE son sólo válidas en el
+archivo principal killfile (suckkillfile). Son ignoradas en cualquier otro
+archivo.
+
+Añadí un chequeo a una rutina de "file-parsing", por eso si una expresión es
+una cadena, y no una expresión regular (asumiendo que tu tienes regex en tu
+sistema), entonces no usamos regex.  Afortunadamente esto hará el escaneo
+mas rápido. Yo detecto una expresión regular escaneando ciertos caracteres
+en la cadena. Si detecto alguno de los siguientes caracteres *[]()^$\.
+entonces asumo un regex. Si accidentalmente me salté algún caracter
+especial, añádelo a rege_chars[] en killfile.c y házmelo saber, de tal
+manera que lo pueda incluir en nuevas versiones.
+
+También agregué algunas opciones para le proceso de "logging". Ahora hay
+tres opciones:
+
+-L  - igual que antes, no "logging"
+-LL - version AMPLIA, muestra las razones, matados y cabeceras (igual que antes)
+      POR DEFECTO
+ 
+-LS - versión ABREVIADA, sólo muestra 1 línea razonada de por qué matado
+
+Añadí algunas improntas de depuración a la opción -D, en caso de que hubiera
+problemas.
+
+Añadí una opción  -k para que cuando suck parsea los killfiles, no pone el
+sufijo en los nombres de los archivos que machean.  Esto permite que puedes
+mantener un conjunto de killfiles para multiples servidores.

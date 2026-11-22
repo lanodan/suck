@@ -12,10 +12,7 @@
 #include "chkhistory.h"
 #include "suckutils.h"
 #include "phrases.h"
-
-#ifdef TIMER
 #include "timer.h"
-#endif
 
 /* These take care if user had multiple defines in makefile */
 /* use DBM if we've got it */
@@ -63,9 +60,7 @@ void chkhistory(PMaster master) {
 
 		print_phrases(master->msgs, chkh_phrases[6], NULL);
 		fflush(master->msgs);	/* so msg gets printed */
-#ifdef TIMER
 		TimerFunc(TIMER_START, 0L, NULL);
-#endif
 
 		/* okay cycle thru our list, checking each against the history DB */
 		curr = master->head;
@@ -73,9 +68,9 @@ void chkhistory(PMaster master) {
 		
 		while(curr != NULL ) {
 			if(check_history(curr->msgnr) == TRUE) {
-#ifdef DEBUG2
-				do_debug("Matched %s, nuking\n", curr->msgnr);
-#endif
+				if(master->debug == TRUE) {
+					do_debug("Matched %s, nuking\n", curr->msgnr);
+				}
 				/* matched, nuke it */
 				nrfound++;
 				master->nritems--;
@@ -97,9 +92,8 @@ void chkhistory(PMaster master) {
 				curr = curr->next;
 			}
 		}
-#ifdef TIMER
 		TimerFunc(TIMER_TIMEONLY, 0l, master->msgs);
-#endif
+
 		close_history();
 		print_phrases(master->msgs, chkh_phrases[4], str_int(nrfound), NULL);
 	}
